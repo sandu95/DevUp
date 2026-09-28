@@ -5,6 +5,7 @@ import courseRoutes from "./routes/course.routes.js"
 import lessonRoutes from "./routes/lesson.routes.js"
 import quizRoutes from "./routes/quiz.routes.js"
 import progressRoutes from "./routes/progress.routes.js"
+import enrollmentRoutes from "./routes/enrollment.routes.js"
 
 const app = express()
 const PORT = 3000
@@ -23,6 +24,7 @@ app.use("/api/courses", courseRoutes)
 app.use("/api/lessons", lessonRoutes)
 app.use("/api/quizzes", quizRoutes)
 app.use("/api/progress", progressRoutes)
+app.use("/api/enrollments", enrollmentRoutes)
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)

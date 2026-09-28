@@ -1,4 +1,6 @@
 import type { Request, Response } from "express"
+import type { AuthRequest } from "../middleware/auth.middleware.js"
+import { isUserEnrolled } from "../services/enrollment.service.js"
 import {
   createLesson,
   deleteLesson,
@@ -75,8 +77,17 @@ export const getByCourse = async (req: Request, res: Response) => {
   }
 }
 
-export const getOne = async (req: Request, res: Response) => {
+export const getOne = async (
+  req: AuthRequest,
+  res: Response
+) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      })
+    }
+
     const id = Number(req.params.id)
 
     if (!Number.isInteger(id) || id <= 0) {
@@ -91,6 +102,19 @@ export const getOne = async (req: Request, res: Response) => {
       return res.status(404).json({
         message: "Lesson not found",
       })
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const enrolled = await isUserEnrolled(
+        req.user.userId,
+        lesson.courseId
+      )
+
+      if (!enrolled) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course",
+        })
+      }
     }
 
     return res.json({

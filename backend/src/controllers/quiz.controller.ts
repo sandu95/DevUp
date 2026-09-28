@@ -11,6 +11,7 @@ import {
   getUserQuizAttempts,
 } from "../services/quiz.service.js"
 import { getLessonById } from "../services/lesson.service.js"
+import { isUserEnrolled } from "../services/enrollment.service.js"
 
 import type { AuthRequest } from "../middleware/auth.middleware.js"
 
@@ -59,7 +60,7 @@ export const create = async (req: Request, res: Response) => {
 }
 
 export const getStudentQuiz = async (
-  req: Request,
+  req: AuthRequest,
   res: Response
 ) => {
   try {
@@ -77,6 +78,25 @@ export const getStudentQuiz = async (
       return res.status(404).json({
         message: "Quiz not found",
       })
+    }
+
+    if (req.user?.role !== "ADMIN") {
+      if (!req.user) {
+        return res.status(401).json({
+          message: "Unauthorized",
+        })
+      }
+
+      const enrolled = await isUserEnrolled(
+        req.user.userId,
+        quiz.lesson.courseId
+      )
+
+      if (!enrolled) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course",
+        })
+      }
     }
 
     return res.json({
@@ -244,6 +264,27 @@ export const submit = async (
       return res.status(400).json({
         message: "Invalid answer format",
       })
+    }
+
+    const quiz = await getQuizForStudent(quizId)
+
+    if (!quiz) {
+      return res.status(404).json({
+        message: "Quiz not found",
+      })
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const enrolled = await isUserEnrolled(
+        req.user.userId,
+        quiz.lesson.courseId
+      )
+
+      if (!enrolled) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course",
+        })
+      }
     }
 
     const result = await submitQuiz(

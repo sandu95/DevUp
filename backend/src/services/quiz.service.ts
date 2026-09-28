@@ -47,6 +47,12 @@ export const getQuizForStudent = async (id: number) => {
       id,
     },
     include: {
+      lesson: {
+        select: {
+          id: true,
+          courseId: true,
+        },
+      },
       questions: {
         orderBy: {
           position: "asc",

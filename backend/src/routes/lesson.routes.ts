@@ -14,7 +14,12 @@ import {
 const router = Router()
 
 router.get("/course/:courseId", getByCourse)
-router.get("/:id", getOne)
+
+router.get(
+  "/:id",
+  authenticate,
+  getOne
+)
 
 router.post(
   "/",
