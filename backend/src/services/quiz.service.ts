@@ -107,6 +107,21 @@ export const getQuizByLesson = async (lessonId: number) => {
   })
 }
 
+export const getQuizByLessonForStudent = async (
+  lessonId: number
+) => {
+  return prisma.quiz.findUnique({
+    where: {
+      lessonId,
+    },
+    select: {
+      id: true,
+      title: true,
+      lessonId: true,
+    },
+  })
+}
+
 export const createQuestion = async (
   data: CreateQuestionData
 ) => {
@@ -115,9 +130,43 @@ export const createQuestion = async (
   })
 }
 
+export const getQuestionById = async (
+  questionId: number
+) => {
+  return prisma.question.findUnique({
+    where: {
+      id: questionId,
+    },
+    include: {
+      options: true,
+      quiz: {
+        select: {
+          id: true,
+          title: true,
+          lessonId: true,
+        },
+      },
+    },
+  })
+}
+
 export const createAnswerOption = async (
   data: CreateAnswerOptionData
 ) => {
+  if (data.isCorrect) {
+    const existingCorrectOption =
+      await prisma.answerOption.findFirst({
+        where: {
+          questionId: data.questionId,
+          isCorrect: true,
+        },
+      })
+
+    if (existingCorrectOption) {
+      throw new Error("CORRECT_OPTION_ALREADY_EXISTS")
+    }
+  }
+
   return prisma.answerOption.create({
     data,
   })
@@ -245,6 +294,109 @@ export const getUserQuizAttempts = async (
           lessonId: true,
         },
       },
+    },
+  })
+}
+
+interface UpdateQuestionData {
+  text?: string
+  position?: number
+}
+
+interface UpdateAnswerOptionData {
+  text?: string
+  isCorrect?: boolean
+}
+
+export const updateQuestion = async (
+  questionId: number,
+  data: UpdateQuestionData
+) => {
+  return prisma.question.update({
+    where: {
+      id: questionId,
+    },
+    data,
+  })
+}
+
+export const deleteQuestion = async (
+  questionId: number
+) => {
+  return prisma.question.delete({
+    where: {
+      id: questionId,
+    },
+  })
+}
+
+export const updateAnswerOption = async (
+  optionId: number,
+  data: UpdateAnswerOptionData
+) => {
+  if (data.isCorrect === true) {
+    const option = await prisma.answerOption.findUnique({
+      where: {
+        id: optionId,
+      },
+    })
+
+    if (!option) {
+      throw new Error("ANSWER_OPTION_NOT_FOUND")
+    }
+
+    const existingCorrect =
+      await prisma.answerOption.findFirst({
+        where: {
+          questionId: option.questionId,
+          isCorrect: true,
+          NOT: {
+            id: optionId,
+          },
+        },
+      })
+
+    if (existingCorrect) {
+      throw new Error("CORRECT_OPTION_ALREADY_EXISTS")
+    }
+  }
+
+  return prisma.answerOption.update({
+    where: {
+      id: optionId,
+    },
+    data,
+  })
+}
+
+export const deleteAnswerOption = async (
+  optionId: number
+) => {
+  return prisma.answerOption.delete({
+    where: {
+      id: optionId,
+    },
+  })
+}
+
+export const updateQuiz = async (
+  quizId: number,
+  title: string
+) => {
+  return prisma.quiz.update({
+    where: {
+      id: quizId,
+    },
+    data: {
+      title,
+    },
+  })
+}
+
+export const deleteQuiz = async (quizId: number) => {
+  return prisma.quiz.delete({
+    where: {
+      id: quizId,
     },
   })
 }

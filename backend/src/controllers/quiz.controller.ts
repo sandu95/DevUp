@@ -7,8 +7,16 @@ import {
   getQuizForAdmin,
   getQuizForStudent,
   getQuizByLesson,
+  getQuestionById,
   submitQuiz,
   getUserQuizAttempts,
+  getQuizByLessonForStudent,
+  deleteAnswerOption,
+  updateAnswerOption,
+  deleteQuestion,
+  updateQuestion,
+  updateQuiz,
+  deleteQuiz,
 } from "../services/quiz.service.js"
 import { getLessonById } from "../services/lesson.service.js"
 import { isUserEnrolled } from "../services/enrollment.service.js"
@@ -222,6 +230,15 @@ export const addAnswerOption = async (
   } catch (error) {
     console.error(error)
 
+    if (
+      error instanceof Error &&
+      error.message === "CORRECT_OPTION_ALREADY_EXISTS"
+    ) {
+      return res.status(409).json({
+        message: "This question already has a correct answer",
+      })
+    }
+
     return res.status(500).json({
       message: "Failed to create answer option",
     })
@@ -373,6 +390,301 @@ export const getMyAttempts = async (
 
     return res.status(500).json({
       message: "Failed to fetch quiz attempts",
+    })
+  }
+}
+
+export const getByLesson = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      })
+    }
+
+    const lessonId = Number(req.params.lessonId)
+
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
+      return res.status(400).json({
+        message: "Invalid lesson id",
+      })
+    }
+
+    const lesson = await getLessonById(lessonId)
+
+    if (!lesson) {
+      return res.status(404).json({
+        message: "Lesson not found",
+      })
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const enrolled = await isUserEnrolled(
+        req.user.userId,
+        lesson.courseId
+      )
+
+      if (!enrolled) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course",
+        })
+      }
+    }
+
+    const quiz = await getQuizByLessonForStudent(lessonId)
+
+    return res.json({
+      quiz,
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to fetch lesson quiz",
+    })
+  }
+}
+
+export const getAdminQuestion = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const questionId = Number(req.params.questionId)
+
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      return res.status(400).json({
+        message: "Invalid question id",
+      })
+    }
+
+    const question = await getQuestionById(questionId)
+
+    if (!question) {
+      return res.status(404).json({
+        message: "Question not found",
+      })
+    }
+
+    return res.json({
+      question,
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to fetch question",
+    })
+  }
+}
+
+export const updateQuestionController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const questionId = Number(req.params.questionId)
+    const { text, position } = req.body
+
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      return res.status(400).json({
+        message: "Invalid question id",
+      })
+    }
+
+    const question = await updateQuestion(questionId, {
+      text,
+      position,
+    })
+
+    return res.json({
+      message: "Question updated successfully",
+      question,
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to update question",
+    })
+  }
+}
+
+export const deleteQuestionController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const questionId = Number(req.params.questionId)
+
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      return res.status(400).json({
+        message: "Invalid question id",
+      })
+    }
+
+    await deleteQuestion(questionId)
+
+    return res.json({
+      message: "Question deleted successfully",
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to delete question",
+    })
+  }
+}
+
+export const updateAnswerOptionController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const optionId = Number(req.params.optionId)
+    const { text, isCorrect } = req.body
+
+    if (!Number.isInteger(optionId) || optionId <= 0) {
+      return res.status(400).json({
+        message: "Invalid answer option id",
+      })
+    }
+
+    const option = await updateAnswerOption(optionId, {
+      text,
+      isCorrect,
+    })
+
+    return res.json({
+      message: "Answer option updated successfully",
+      option,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "CORRECT_OPTION_ALREADY_EXISTS"
+    ) {
+      return res.status(409).json({
+        message: "This question already has a correct answer",
+      })
+    }
+
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to update answer option",
+    })
+  }
+}
+
+export const deleteAnswerOptionController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const optionId = Number(req.params.optionId)
+
+    if (!Number.isInteger(optionId) || optionId <= 0) {
+      return res.status(400).json({
+        message: "Invalid answer option id",
+      })
+    }
+
+    await deleteAnswerOption(optionId)
+
+    return res.json({
+      message: "Answer option deleted successfully",
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to delete answer option",
+    })
+  }
+}
+
+export const updateQuizController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const quizId = Number(req.params.id)
+    const { title } = req.body
+
+    if (!Number.isInteger(quizId) || quizId <= 0) {
+      return res.status(400).json({
+        message: "Invalid quiz id",
+      })
+    }
+
+    if (!title || typeof title !== "string") {
+      return res.status(400).json({
+        message: "Quiz title is required",
+      })
+    }
+
+    const existingQuiz = await getQuizById(quizId)
+
+    if (!existingQuiz) {
+      return res.status(404).json({
+        message: "Quiz not found",
+      })
+    }
+
+    const quiz = await updateQuiz(
+      quizId,
+      title.trim()
+    )
+
+    return res.json({
+      message: "Quiz updated successfully",
+      quiz,
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to update quiz",
+    })
+  }
+}
+
+export const deleteQuizController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const quizId = Number(req.params.id)
+
+    if (!Number.isInteger(quizId) || quizId <= 0) {
+      return res.status(400).json({
+        message: "Invalid quiz id",
+      })
+    }
+
+    const existingQuiz = await getQuizById(quizId)
+
+    if (!existingQuiz) {
+      return res.status(404).json({
+        message: "Quiz not found",
+      })
+    }
+
+    await deleteQuiz(quizId)
+
+    return res.json({
+      message: "Quiz deleted successfully",
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      message: "Failed to delete quiz",
     })
   }
 }

@@ -1,4 +1,5 @@
 import express from "express"
+import cors from "cors"
 import userRoutes from "./routes/user.routes.js"
 import authRoutes from "./routes/auth.routes.js"
 import courseRoutes from "./routes/course.routes.js"
@@ -9,6 +10,13 @@ import enrollmentRoutes from "./routes/enrollment.routes.js"
 
 const app = express()
 const PORT = 3000
+
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+)
 
 app.use(express.json())
 

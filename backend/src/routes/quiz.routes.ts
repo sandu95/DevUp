@@ -7,6 +7,14 @@ import {
   getAdminQuiz,
   submit,
   getMyAttempts,
+  getByLesson,
+  getAdminQuestion,
+  deleteAnswerOptionController,
+  deleteQuestionController,
+  updateAnswerOptionController,
+  updateQuestionController,
+  updateQuizController,
+  deleteQuizController,
 } from "../controllers/quiz.controller.js"
 import {
   authenticate,
@@ -19,6 +27,19 @@ router.get(
   "/attempts/me",
   authenticate,
   getMyAttempts
+)
+
+router.get(
+  "/lesson/:lessonId",
+  authenticate,
+  getByLesson
+)
+
+router.get(
+  "/questions/:questionId/admin",
+  authenticate,
+  authorize("ADMIN"),
+  getAdminQuestion
 )
 
 router.get(
@@ -48,6 +69,7 @@ router.post(
   addQuestion
 )
 
+
 router.post(
   "/questions/:questionId/options",
   authenticate,
@@ -59,6 +81,48 @@ router.post(
   "/:id/submit",
   authenticate,
   submit
+)
+
+router.patch(
+  "/questions/:questionId",
+  authenticate,
+  authorize("ADMIN"),
+  updateQuestionController
+)
+
+router.delete(
+  "/questions/:questionId",
+  authenticate,
+  authorize("ADMIN"),
+  deleteQuestionController
+)
+
+router.patch(
+  "/options/:optionId",
+  authenticate,
+  authorize("ADMIN"),
+  updateAnswerOptionController
+)
+
+router.delete(
+  "/options/:optionId",
+  authenticate,
+  authorize("ADMIN"),
+  deleteAnswerOptionController
+)
+
+router.patch(
+  "/:id",
+  authenticate,
+  authorize("ADMIN"),
+  updateQuizController
+)
+
+router.delete(
+  "/:id",
+  authenticate,
+  authorize("ADMIN"),
+  deleteQuizController
 )
 
 export default router

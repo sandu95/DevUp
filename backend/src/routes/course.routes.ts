@@ -5,16 +5,32 @@ import {
   getOne,
   update,
   remove,
+  getPublicCurriculum,
 } from "../controllers/course.controller.js"
 import {
   authenticate,
   authorize,
+  optionalAuthenticate,
 } from "../middleware/auth.middleware.js"
 
 const router = Router()
 
-router.get("/", getAll)
-router.get("/:id", getOne)
+router.get(
+  "/",
+  optionalAuthenticate,
+  getAll
+)
+
+router.get(
+  "/:id/curriculum",
+  getPublicCurriculum
+)
+
+router.get(
+  "/:id",
+  optionalAuthenticate,
+  getOne
+)
 
 router.post(
   "/",

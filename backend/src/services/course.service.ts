@@ -58,3 +58,50 @@ export const deleteCourse = async (id: number) => {
     },
   })
 }
+
+export const getPublishedCourses = async () => {
+  return prisma.course.findMany({
+    where: {
+      status: "PUBLISHED",
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  })
+}
+
+export const getPublishedCourseById = async (
+  courseId: number
+) => {
+  return prisma.course.findFirst({
+    where: {
+      id: courseId,
+      status: "PUBLISHED",
+    },
+  })
+}
+
+export const getPublicCourseCurriculum = async (
+  courseId: number
+) => {
+  return prisma.course.findFirst({
+    where: {
+      id: courseId,
+      status: "PUBLISHED",
+    },
+    select: {
+      id: true,
+      title: true,
+      lessons: {
+        orderBy: {
+          position: "asc",
+        },
+        select: {
+          id: true,
+          title: true,
+          position: true,
+        },
+      },
+    },
+  })
+}

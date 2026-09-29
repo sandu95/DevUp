@@ -70,3 +70,44 @@ export const authorize = (...allowedRoles: JwtPayload["role"][]) => {
     next()
   }
 }
+
+export const optionalAuthenticate = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const authorization = req.headers.authorization
+
+  if (!authorization) {
+    return next()
+  }
+
+  const [type, token] = authorization.split(" ")
+
+  if (type !== "Bearer" || !token) {
+    return res.status(401).json({
+      message: "Invalid authorization header",
+    })
+  }
+
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET!
+    ) as {
+      userId: number
+      role: "STUDENT" | "ADMIN"
+    }
+
+    req.user = {
+      userId: decoded.userId,
+      role: decoded.role,
+    }
+
+    next()
+  } catch {
+    return res.status(401).json({
+      message: "Invalid or expired token",
+    })
+  }
+}
