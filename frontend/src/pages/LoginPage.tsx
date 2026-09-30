@@ -1,3 +1,4 @@
+import type { LoginResponse } from "../types/auth"
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { api } from "../services/api"
@@ -22,7 +23,7 @@ function LoginPage() {
         setLoading(true)
 
         try {
-            const data = await api("/auth/login", {
+            const data = await api<LoginResponse>("/auth/login", {
                 method: "POST",
                 body: JSON.stringify({
                     email,
@@ -37,7 +38,7 @@ function LoginPage() {
             } else {
                 navigate("/dashboard")
             }
-            
+
         } catch (error) {
             setError(
                 error instanceof Error

@@ -33,6 +33,7 @@ function AppLayout() {
         {/* Sidebar */}
         <aside className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-slate-200 bg-white">
           <div className="flex h-20 items-center border-b border-slate-100 px-6">
+            <NavLink to="/" end className={navLinkClass}>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900">
                 DevUp
@@ -42,6 +43,7 @@ function AppLayout() {
                 Learning Platform
               </p>
             </div>
+            </NavLink>
           </div>
 
           <div className="flex flex-1 flex-col px-4 py-6">
@@ -50,7 +52,7 @@ function AppLayout() {
             </p>
 
             <nav className="space-y-1">
-              <NavLink to="/" end className={navLinkClass}>
+              <NavLink to="/dashboard" end className={navLinkClass}>
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
                   ⌂
                 </span>

@@ -20,3 +20,15 @@ export interface Enrollment {
   course: Course
   progress: EnrollmentProgress
 }
+
+export interface Curriculum {
+  courseId: number
+  title: string
+  lessons: CurriculumLesson[]
+}
+
+interface CurriculumLesson {
+  id: number
+  title: string
+  position: number
+}

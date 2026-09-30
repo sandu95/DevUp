@@ -2,19 +2,7 @@ import { useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { api } from "../services/api"
 import { useAuth } from "../context/AuthContext"
-import type { Course } from "../types/course"
-
-interface CurriculumLesson {
-  id: number
-  title: string
-  position: number
-}
-
-interface Curriculum {
-  courseId: number
-  title: string
-  lessons: CurriculumLesson[]
-}
+import type { Course, Curriculum } from "../types/course"
 
 function PublicCoursePage() {
   const { id } = useParams()
@@ -35,8 +23,8 @@ function PublicCoursePage() {
         setError("")
 
         const [courseData, curriculumData] = await Promise.all([
-          api(`/courses/${courseId}`),
-          api(`/courses/${courseId}/curriculum`),
+          api<{course: Course}>(`/courses/${courseId}`),
+          api<Curriculum>(`/courses/${courseId}/curriculum`),
         ])
 
         setCourse(courseData.course)
