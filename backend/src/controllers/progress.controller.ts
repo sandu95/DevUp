@@ -7,6 +7,7 @@ import {
 } from "../services/progress.service.js"
 import { getCourseById } from "../services/course.service.js"
 import { getLessonById } from "../services/lesson.service.js"
+import { getQuizByLesson } from "../services/quiz.service.js"
 import { isUserEnrolled } from "../services/enrollment.service.js"
 
 export const completeLesson = async (
@@ -47,6 +48,15 @@ export const completeLesson = async (
           message: "You are not enrolled in this course",
         })
       }
+    }
+
+    const quiz = await getQuizByLesson(lessonId)
+
+    if (quiz) {
+      return res.status(409).json({
+        message:
+          "This lesson has a quiz and can only be completed by achieving 100% on the quiz",
+      })
     }
 
     const progress = await markLessonCompleted(

@@ -11,6 +11,17 @@ interface Lesson {
   courseId: number
 }
 
+interface Enrollment {
+  id: number
+  enrolledAt: string
+  course: Course
+  progress: {
+    completedLessons: number
+    totalLessons: number
+    percentage: number
+  }
+}
+
 interface LessonProgress {
   id: number
   title: string
@@ -35,8 +46,10 @@ function CourseDetailsPage() {
   const [course, setCourse] = useState<Course | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [progress, setProgress] = useState<CourseProgress | null>(null)
+  const [enrolled, setEnrolled] = useState(false)
 
   const [loading, setLoading] = useState(true)
+  const [enrolling, setEnrolling] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -48,21 +61,40 @@ function CourseDetailsPage() {
 
     const loadCourse = async () => {
       try {
-        const [courseData, lessonsData] = await Promise.all([
-          api(`/courses/${courseId}`),
-          api(`/lessons/course/${courseId}`),
-        ])
+        setLoading(true)
+        setError("")
+
+        const [courseData, lessonsData, enrollmentsData] =
+          await Promise.all([
+            api<{ course: Course }>(`/courses/${courseId}`),
+            api<{ lessons: Lesson[] }>(
+              `/lessons/course/${courseId}`
+            ),
+            api<{ enrollments: Enrollment[] }>(
+              "/enrollments/me"
+            ),
+          ])
 
         setCourse(courseData.course)
         setLessons(lessonsData.lessons)
 
-        try {
-          const progressData = await api(
-            `/progress/courses/${courseId}`
-          )
+        const isEnrolled = enrollmentsData.enrollments.some(
+          (enrollment) => enrollment.course.id === courseId
+        )
 
-          setProgress(progressData.progress)
-        } catch {
+        setEnrolled(isEnrolled)
+
+        if (isEnrolled) {
+          try {
+            const progressData = await api<{
+              progress: CourseProgress
+            }>(`/progress/courses/${courseId}`)
+
+            setProgress(progressData.progress)
+          } catch {
+            setProgress(null)
+          }
+        } else {
           setProgress(null)
         }
       } catch (error) {
@@ -78,6 +110,33 @@ function CourseDetailsPage() {
 
     loadCourse()
   }, [courseId])
+
+  const handleEnroll = async () => {
+    try {
+      setEnrolling(true)
+      setError("")
+
+      await api(`/enrollments/courses/${courseId}`, {
+        method: "POST",
+      })
+
+      setEnrolled(true)
+
+      const progressData = await api<{
+        progress: CourseProgress
+      }>(`/progress/courses/${courseId}`)
+
+      setProgress(progressData.progress)
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to enroll in course"
+      )
+    } finally {
+      setEnrolling(false)
+    }
+  }
 
   const isLessonCompleted = (lessonId: number) => {
     return (
@@ -95,10 +154,18 @@ function CourseDetailsPage() {
     )
   }
 
-  if (error || !course) {
+  if (error && !course) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {error || "Course not found"}
+        {error}
+      </div>
+    )
+  }
+
+  if (!course) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        Course not found
       </div>
     )
   }
@@ -123,6 +190,17 @@ function CourseDetailsPage() {
               >
                 {course.status}
               </span>
+
+              <span
+                className={[
+                  "rounded-full px-3 py-1 text-xs font-semibold",
+                  enrolled
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-slate-100 text-slate-600",
+                ].join(" ")}
+              >
+                {enrolled ? "Enrolled" : "Not enrolled"}
+              </span>
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">
@@ -133,7 +211,22 @@ function CourseDetailsPage() {
               {course.description ?? "No description available."}
             </p>
 
-            {progress && (
+            {!enrolled && (
+              <div className="mt-8">
+                <button
+                  type="button"
+                  onClick={handleEnroll}
+                  disabled={enrolling}
+                  className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {enrolling
+                    ? "Enrolling..."
+                    : "Enroll in course"}
+                </button>
+              </div>
+            )}
+
+            {enrolled && progress && (
               <div className="mt-8 max-w-xl">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-medium text-slate-600">
@@ -158,6 +251,12 @@ function CourseDetailsPage() {
                   {progress.completedLessons} of{" "}
                   {progress.totalLessons} lessons completed
                 </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {error}
               </div>
             )}
           </div>
@@ -185,7 +284,9 @@ function CourseDetailsPage() {
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Follow the lessons in order and track your progress.
+            {enrolled
+              ? "Follow the lessons in order and track your progress."
+              : "Enroll in the course to access the lessons."}
           </p>
         </div>
 
@@ -208,12 +309,18 @@ function CourseDetailsPage() {
                   <div
                     className={[
                       "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold",
-                      completed
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-slate-100 text-slate-600",
+                      !enrolled
+                        ? "bg-slate-100 text-slate-400"
+                        : completed
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-600",
                     ].join(" ")}
                   >
-                    {completed ? "✓" : lesson.position}
+                    {!enrolled
+                      ? "🔒"
+                      : completed
+                        ? "✓"
+                        : lesson.position}
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -226,12 +333,18 @@ function CourseDetailsPage() {
                     </p>
                   </div>
 
-                  <Link
-                    to={`/lessons/${lesson.id}`}
-                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {completed ? "Review" : "Start"}
-                  </Link>
+                  {enrolled ? (
+                    <Link
+                      to={`/lessons/${lesson.id}`}
+                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {completed ? "Review" : "Start"}
+                    </Link>
+                  ) : (
+                    <span className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400">
+                      Locked
+                    </span>
+                  )}
                 </div>
               )
             })}

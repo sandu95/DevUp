@@ -211,106 +211,107 @@ function AdminCoursePage() {
       )}
 
       <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
-        <form
-          onSubmit={handleSubmit}
-          className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
-        >
-          <h2 className="text-lg font-semibold text-slate-900">
-            {editingId
-              ? "Edit lesson"
-              : "Create lesson"}
-          </h2>
+        {course.status === "DRAFT" && (
+          <form
+            onSubmit={handleSubmit}
+            className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
+          >
+            <h2 className="text-lg font-semibold text-slate-900">
+              {editingId
+                ? "Edit lesson"
+                : "Create lesson"}
+            </h2>
 
-          <p className="mt-1 text-sm text-slate-500">
-            {editingId
-              ? "Update the selected lesson."
-              : "Add a new lesson to this course."}
-          </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {editingId
+                ? "Update the selected lesson."
+                : "Add a new lesson to this course."}
+            </p>
 
-          <div className="mt-6 space-y-5">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Title
-              </label>
+            <div className="mt-6 space-y-5">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Title
+                </label>
 
-              <input
-                value={form.title}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    title: event.target.value,
-                  }))
-                }
-                required
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
+                <input
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Position
+                </label>
+
+                <input
+                  type="number"
+                  min="1"
+                  value={form.position}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      position: Number(event.target.value),
+                    }))
+                  }
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Content
+                </label>
+
+                <textarea
+                  value={form.content}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      content: event.target.value,
+                    }))
+                  }
+                  rows={10}
+                  required
+                  className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Position
-              </label>
-
-              <input
-                type="number"
-                min="1"
-                value={form.position}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    position: Number(event.target.value),
-                  }))
-                }
-                required
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Content
-              </label>
-
-              <textarea
-                value={form.content}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    content: event.target.value,
-                  }))
-                }
-                rows={10}
-                required
-                className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 flex gap-3">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {saving
-                ? "Saving..."
-                : editingId
-                  ? "Save changes"
-                  : "Create lesson"}
-            </button>
-
-            {editingId && (
+            <div className="mt-6 flex gap-3">
               <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                type="submit"
+                disabled={saving}
+                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                Cancel
+                {saving
+                  ? "Saving..."
+                  : editingId
+                    ? "Save changes"
+                    : "Create lesson"}
               </button>
-            )}
-          </div>
-        </form>
 
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+        )}
         <section>
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -348,21 +349,23 @@ function AdminCoursePage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(lesson)}
-                      className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                    >
-                      Edit
-                    </button>
+                    {course.status === "DRAFT" && (
+                      <button
+                        onClick={() => handleEdit(lesson)}
+                        className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                      >
+                        Edit
+                      </button>
+                    )}
 
-                    <button
-                      onClick={() =>
-                        handleDelete(lesson.id)
-                      }
-                      className="rounded-xl border border-red-200 px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
+                    {course.status === "DRAFT" && (
+                      <button
+                        onClick={() => handleDelete(lesson.id)}
+                        className="rounded-xl border border-red-200 px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    )}
 
                     <Link
                       to={`/admin/lessons/${lesson.id}`}

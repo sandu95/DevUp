@@ -128,6 +128,36 @@ function AdminPage() {
         }
     }
 
+    const handleDelete = async (course: Course) => {
+        const confirmed = window.confirm(
+            `Are you sure you want to permanently delete "${course.title}"?\n\nThis will also delete all lessons, quizzes, enrollments, progress and quiz attempts associated with this course.`
+        )
+
+        if (!confirmed) {
+            return
+        }
+
+        try {
+            setError("")
+
+            await api(`/courses/${course.id}`, {
+                method: "DELETE",
+            })
+
+            if (editingId === course.id) {
+                resetForm()
+            }
+
+            await loadCourses()
+        } catch (error) {
+            setError(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to delete course"
+            )
+        }
+    }
+
     if (loading) {
         return (
             <p className="text-sm text-slate-500">
@@ -330,11 +360,20 @@ function AdminPage() {
                                             </p>
                                         </div>
 
+                                        {course.status === "DRAFT" && (
+                                            <button
+                                                onClick={() => handleEdit(course)}
+                                                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                                            >
+                                                Edit
+                                            </button>
+                                        )}
+
                                         <button
-                                            onClick={() => handleEdit(course)}
-                                            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                                            onClick={() => handleDelete(course)}
+                                            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
                                         >
-                                            Edit
+                                            Delete
                                         </button>
 
                                         <Link

@@ -44,15 +44,16 @@ export const AuthProvider = ({
       }
 
       try {
-        const currentUser = await api<User>("/auth/me")
+        const response = await api<{ user: User }>("/users/me")
 
         setToken(storedToken)
-        setUser(currentUser)
+        setUser(response.user)
 
         localStorage.setItem(
           "user",
-          JSON.stringify(currentUser)
+          JSON.stringify(response.user)
         )
+        
       } catch {
         localStorage.removeItem("token")
         localStorage.removeItem("user")

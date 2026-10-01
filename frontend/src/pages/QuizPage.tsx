@@ -182,6 +182,16 @@ function QuizPage() {
             questions correctly.
           </p>
 
+          {result.score === 100 ? (
+            <p className="mt-3 font-semibold text-emerald-600">
+              Perfect score! This lesson has been completed.
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-amber-600">
+              You need 100% to complete this lesson.
+            </p>
+          )}
+
           <div className="mt-8 flex justify-center gap-3">
             <button
               onClick={() => {

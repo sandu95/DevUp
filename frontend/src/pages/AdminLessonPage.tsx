@@ -8,6 +8,10 @@ interface Lesson {
     content: string
     position: number
     courseId: number
+    course: {
+        id: number
+        status: "DRAFT" | "PUBLISHED"
+    }
 }
 
 interface AnswerOption {
@@ -229,7 +233,7 @@ function AdminLessonPage() {
             )
 
             await loadData()
-            
+
         } catch (error) {
             setError(
                 error instanceof Error
@@ -286,144 +290,148 @@ function AdminLessonPage() {
                 </div>
             )}
 
-            <form
-                onSubmit={handleCreateQuiz}
-                className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6"
-            >
-                <h2 className="text-lg font-semibold text-slate-900">
-                    {quiz ? "Edit quiz" : "Create quiz"}
-                </h2>
+            {lesson.course.status === "DRAFT" && (
+                <form
+                    onSubmit={handleCreateQuiz}
+                    className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6"
+                >
+                    <h2 className="text-lg font-semibold text-slate-900">
+                        {quiz ? "Edit quiz" : "Create quiz"}
+                    </h2>
 
-                <p className="mt-1 text-sm text-slate-500">
-                    {quiz
-                        ? "Update the quiz title."
-                        : "Create a quiz for this lesson."}
-                </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                        {quiz
+                            ? "Update the quiz title."
+                            : "Create a quiz for this lesson."}
+                    </p>
 
-                <div className="mt-5">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                        Quiz title
-                    </label>
+                    <div className="mt-5">
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            Quiz title
+                        </label>
 
-                    <input
-                        value={quizTitle}
-                        onChange={(event) =>
-                            setQuizTitle(event.target.value)
-                        }
-                        required
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                    />
-                </div>
+                        <input
+                            value={quizTitle}
+                            onChange={(event) =>
+                                setQuizTitle(event.target.value)
+                            }
+                            required
+                            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                        />
+                    </div>
 
-                <div className="mt-5 flex gap-3">
-                    <button
-                        type="submit"
-                        disabled={saving}
-                        className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                        {saving
-                            ? "Saving..."
-                            : quiz
-                                ? "Save changes"
-                                : "Create quiz"}
-                    </button>
-
-                    {quiz && (
+                    <div className="mt-5 flex gap-3">
                         <button
-                            type="button"
-                            onClick={handleDeleteQuiz}
-                            className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            type="submit"
+                            disabled={saving}
+                            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                         >
-                            Delete quiz
+                            {saving
+                                ? "Saving..."
+                                : quiz
+                                    ? "Save changes"
+                                    : "Create quiz"}
                         </button>
-                    )}
-                </div>
-            </form>
+
+                        {quiz && (
+                            <button
+                                type="button"
+                                onClick={handleDeleteQuiz}
+                                className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                                Delete quiz
+                            </button>
+                        )}
+                    </div>
+                </form>
+            )}
             {quiz && (
                 <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
-                    <form
-                        onSubmit={handleAddQuestion}
-                        className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
-                    >
-                        <h2 className="text-lg font-semibold text-slate-900">
-                            {editingQuestionId
-                                ? "Edit question"
-                                : "Add question"}
-                        </h2>
+                    {lesson.course.status === "DRAFT" && (
+                        <form
+                            onSubmit={handleAddQuestion}
+                            className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
+                        >
+                            <h2 className="text-lg font-semibold text-slate-900">
+                                {editingQuestionId
+                                    ? "Edit question"
+                                    : "Add question"}
+                            </h2>
 
-                        <p className="mt-1 text-sm text-slate-500">
-                            {editingQuestionId
-                                ? "Update the selected question."
-                                : "Add a new question to this quiz."}
-                        </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                                {editingQuestionId
+                                    ? "Update the selected question."
+                                    : "Add a new question to this quiz."}
+                            </p>
 
-                        <div className="mt-5 space-y-5">
-                            <div>
-                                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Question
-                                </label>
+                            <div className="mt-5 space-y-5">
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                        Question
+                                    </label>
 
-                                <textarea
-                                    value={questionText}
-                                    onChange={(event) =>
-                                        setQuestionText(event.target.value)
-                                    }
-                                    rows={4}
-                                    required
-                                    className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                                />
+                                    <textarea
+                                        value={questionText}
+                                        onChange={(event) =>
+                                            setQuestionText(event.target.value)
+                                        }
+                                        rows={4}
+                                        required
+                                        className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                        Position
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={questionPosition}
+                                        onChange={(event) =>
+                                            setQuestionPosition(
+                                                Number(event.target.value)
+                                            )
+                                        }
+                                        required
+                                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
+                                    />
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Position
-                                </label>
-
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={questionPosition}
-                                    onChange={(event) =>
-                                        setQuestionPosition(
-                                            Number(event.target.value)
-                                        )
-                                    }
-                                    required
-                                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="mt-5 flex gap-3">
-                            <button
-                                type="submit"
-                                disabled={saving}
-                                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                                {saving
-                                    ? "Saving..."
-                                    : editingQuestionId
-                                        ? "Save changes"
-                                        : "Add question"}
-                            </button>
-
-                            {editingQuestionId && (
+                            <div className="mt-5 flex gap-3">
                                 <button
-                                    type="button"
-                                    onClick={() => {
-                                        setEditingQuestionId(null)
-                                        setQuestionText("")
-                                        setQuestionPosition(
-                                            quiz.questions.length + 1
-                                        )
-                                    }}
-                                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                    type="submit"
+                                    disabled={saving}
+                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                                 >
-                                    Cancel
+                                    {saving
+                                        ? "Saving..."
+                                        : editingQuestionId
+                                            ? "Save changes"
+                                            : "Add question"}
                                 </button>
-                            )}
-                        </div>
-                    </form>
+
+                                {editingQuestionId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setEditingQuestionId(null)
+                                            setQuestionText("")
+                                            setQuestionPosition(
+                                                quiz.questions.length + 1
+                                            )
+                                        }}
+                                        className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+                    )}
 
                     <section>
                         <div className="mb-4">
@@ -469,25 +477,27 @@ function AdminLessonPage() {
                                                         Manage answers
                                                     </Link>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleEditQuestion(question)
-                                                        }
-                                                        className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                                                    >
-                                                        Edit
-                                                    </button>
+                                                    {lesson.course.status === "DRAFT" && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEditQuestion(question)}
+                                                                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                                            >
+                                                                Edit
+                                                            </button>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleDeleteQuestion(question.id)
-                                                        }
-                                                        className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                                                    >
-                                                        Delete
-                                                    </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    handleDeleteQuestion(question.id)
+                                                                }
+                                                                className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

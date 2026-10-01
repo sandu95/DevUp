@@ -33,6 +33,12 @@ export const create = async (req: Request, res: Response) => {
       })
     }
 
+    if (course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Lessons cannot be modified in a published course",
+      })
+    }
+
     const lesson = await createLesson({
       title,
       content,
@@ -147,6 +153,22 @@ export const update = async (req: Request, res: Response) => {
       })
     }
 
+    const course = await getCourseById(
+      existingLesson.courseId
+    )
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found",
+      })
+    }
+
+    if (course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Lessons cannot be modified in a published course",
+      })
+    }
+
     const { title, content, position } = req.body
 
     const lesson = await updateLesson(id, {
@@ -183,6 +205,22 @@ export const remove = async (req: Request, res: Response) => {
     if (!existingLesson) {
       return res.status(404).json({
         message: "Lesson not found",
+      })
+    }
+
+    const course = await getCourseById(
+      existingLesson.courseId
+    )
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found",
+      })
+    }
+
+    if (course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Lessons cannot be modified in a published course",
       })
     }
 

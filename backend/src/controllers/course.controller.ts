@@ -58,6 +58,12 @@ export const update = async (req: Request, res: Response) => {
       })
     }
 
+    if (existingCourse.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Published courses cannot be modified",
+      })
+    }
+
     const {
       title,
       description,

@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js"
+import { markLessonCompleted } from "./progress.service.js"
 
 interface CreateQuizData {
   title: string
@@ -29,6 +30,18 @@ export const getQuizById = async (id: number) => {
       id,
     },
     include: {
+      lesson: {
+        select: {
+          id: true,
+          courseId: true,
+          course: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
+        },
+      },
       questions: {
         orderBy: {
           position: "asc",
@@ -144,6 +157,16 @@ export const getQuestionById = async (
           id: true,
           title: true,
           lessonId: true,
+          lesson: {
+            select: {
+              course: {
+                select: {
+                  id: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -265,6 +288,13 @@ export const submitQuiz = async (
 
     return createdAttempt
   })
+
+  if (score === 100) {
+    await markLessonCompleted(
+      userId,
+      quiz.lessonId
+    )
+  }
 
   return {
     attemptId: attempt.id,
@@ -397,6 +427,36 @@ export const deleteQuiz = async (quizId: number) => {
   return prisma.quiz.delete({
     where: {
       id: quizId,
+    },
+  })
+}
+
+export const getAnswerOptionWithCourse = async (
+  optionId: number
+) => {
+  return prisma.answerOption.findUnique({
+    where: {
+      id: optionId,
+    },
+    include: {
+      question: {
+        include: {
+          quiz: {
+            include: {
+              lesson: {
+                include: {
+                  course: {
+                    select: {
+                      id: true,
+                      status: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   })
 }

@@ -19,6 +19,12 @@ interface Question {
         id: number
         title: string
         lessonId: number
+        lesson: {
+            course: {
+                id: number
+                status: "DRAFT" | "PUBLISHED"
+            }
+        }
     }
 }
 
@@ -197,68 +203,70 @@ function AdminQuestionPage() {
             )}
 
             <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
-                <form
-                    onSubmit={handleAddOption}
-                    className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
-                >
-                    <h2 className="text-lg font-semibold text-slate-900">
-                        {editingOptionId ? "Edit option" : "Add option"}
-                    </h2>
+                {question.quiz.lesson.course.status === "DRAFT" && (
+                    <form
+                        onSubmit={handleAddOption}
+                        className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
+                    >
+                        <h2 className="text-lg font-semibold text-slate-900">
+                            {editingOptionId ? "Edit option" : "Add option"}
+                        </h2>
 
-                    <p className="mt-1 text-sm text-slate-500">
-                        Add one possible answer for this question.
-                    </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Add one possible answer for this question.
+                        </p>
 
-                    <div className="mt-5">
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                            Answer text
+                        <div className="mt-5">
+                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                Answer text
+                            </label>
+
+                            <textarea
+                                value={optionText}
+                                onChange={(event) =>
+                                    setOptionText(event.target.value)
+                                }
+                                rows={4}
+                                required
+                                className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            />
+                        </div>
+
+                        <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4">
+                            <input
+                                type="checkbox"
+                                checked={isCorrect}
+                                disabled={anotherCorrectOptionExists}
+                                onChange={(event) =>
+                                    setIsCorrect(event.target.checked)
+                                }
+                            />
+
+                            <div>
+                                {anotherCorrectOptionExists && (
+                                    <p className="mt-2 text-xs text-slate-400">
+                                        Another answer is already marked as correct.
+                                    </p>
+                                )}
+                                <p className="text-sm font-medium text-slate-700">
+                                    Correct answer
+                                </p>
+
+                                <p className="text-xs text-slate-400">
+                                    Mark this option as correct.
+                                </p>
+                            </div>
                         </label>
 
-                        <textarea
-                            value={optionText}
-                            onChange={(event) =>
-                                setOptionText(event.target.value)
-                            }
-                            rows={4}
-                            required
-                            className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
-                    </div>
-
-                    <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4">
-                        <input
-                            type="checkbox"
-                            checked={isCorrect}
-                            disabled={anotherCorrectOptionExists}
-                            onChange={(event) =>
-                                setIsCorrect(event.target.checked)
-                            }
-                        />
-
-                        <div>
-                            {anotherCorrectOptionExists && (
-                                <p className="mt-2 text-xs text-slate-400">
-                                    Another answer is already marked as correct.
-                                </p>
-                            )}
-                            <p className="text-sm font-medium text-slate-700">
-                                Correct answer
-                            </p>
-
-                            <p className="text-xs text-slate-400">
-                                Mark this option as correct.
-                            </p>
-                        </div>
-                    </label>
-
-                    <button
-                        type="submit"
-                        disabled={saving}
-                        className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                        {saving ? "Saving..." : editingOptionId ? "Save changes" : "Add question"}
-                    </button>
-                </form>
+                        <button
+                            type="submit"
+                            disabled={saving}
+                            className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                            {saving ? "Saving..." : editingOptionId ? "Save changes" : "Add option"}
+                        </button>
+                    </form>
+                )}
 
                 <section>
                     <div className="mb-4">
@@ -311,19 +319,23 @@ function AdminQuestionPage() {
                                             </span>
                                         )}
 
-                                        <button
-                                            onClick={() => handleEditOption(option)}
-                                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                        >
-                                            Edit
-                                        </button>
+                                        {question.quiz.lesson.course.status === "DRAFT" && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleEditOption(option)}
+                                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                                >
+                                                    Edit
+                                                </button>
 
-                                        <button
-                                            onClick={() => handleDeleteOption(option.id)}
-                                            className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                                        >
-                                            Delete
-                                        </button>
+                                                <button
+                                                    onClick={() => handleDeleteOption(option.id)}
+                                                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             ))}

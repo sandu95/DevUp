@@ -17,11 +17,13 @@ import {
   updateQuestion,
   updateQuiz,
   deleteQuiz,
+  getAnswerOptionWithCourse,
 } from "../services/quiz.service.js"
 import { getLessonById } from "../services/lesson.service.js"
 import { isUserEnrolled } from "../services/enrollment.service.js"
 
 import type { AuthRequest } from "../middleware/auth.middleware.js"
+import { getCourseById } from "../services/course.service.js"
 
 export const create = async (req: Request, res: Response) => {
   try {
@@ -38,6 +40,20 @@ export const create = async (req: Request, res: Response) => {
     if (!lesson) {
       return res.status(404).json({
         message: "Lesson not found",
+      })
+    }
+
+    const course = await getCourseById(lesson.courseId)
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found",
+      })
+    }
+
+    if (course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Cannot modify a published course",
       })
     }
 
@@ -179,6 +195,12 @@ export const addQuestion = async (
       })
     }
 
+    if (quiz.lesson.course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
+      })
+    }
+
     const question = await createQuestion({
       text,
       position,
@@ -214,6 +236,20 @@ export const addAnswerOption = async (
     ) {
       return res.status(400).json({
         message: "Valid questionId, text and isCorrect are required",
+      })
+    }
+
+    const question = await getQuestionById(questionId)
+
+    if (!question) {
+      return res.status(404).json({
+        message: "Question not found",
+      })
+    }
+
+    if (question.quiz.lesson.course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
       })
     }
 
@@ -495,6 +531,23 @@ export const updateQuestionController = async (
       })
     }
 
+    const existingQuestion = await getQuestionById(questionId)
+
+    if (!existingQuestion) {
+      return res.status(404).json({
+        message: "Question not found",
+      })
+    }
+
+    if (
+      existingQuestion.quiz.lesson.course.status ===
+      "PUBLISHED"
+    ) {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
+      })
+    }
+
     const question = await updateQuestion(questionId, {
       text,
       position,
@@ -526,6 +579,23 @@ export const deleteQuestionController = async (
       })
     }
 
+    const question = await getQuestionById(questionId)
+
+    if (!question) {
+      return res.status(404).json({
+        message: "Question not found",
+      })
+    }
+
+    if (
+      question.quiz.lesson.course.status ===
+      "PUBLISHED"
+    ) {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
+      })
+    }
+
     await deleteQuestion(questionId)
 
     return res.json({
@@ -554,14 +624,31 @@ export const updateAnswerOptionController = async (
       })
     }
 
-    const option = await updateAnswerOption(optionId, {
+    const option = await getAnswerOptionWithCourse(optionId)
+
+    if (!option) {
+      return res.status(404).json({
+        message: "Answer option not found",
+      })
+    }
+
+    if (
+      option.question.quiz.lesson.course.status ===
+      "PUBLISHED"
+    ) {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
+      })
+    }
+
+    const updatedOption = await updateAnswerOption(optionId, {
       text,
       isCorrect,
     })
 
     return res.json({
       message: "Answer option updated successfully",
-      option,
+      option: updatedOption,
     })
   } catch (error) {
     if (
@@ -591,6 +678,23 @@ export const deleteAnswerOptionController = async (
     if (!Number.isInteger(optionId) || optionId <= 0) {
       return res.status(400).json({
         message: "Invalid answer option id",
+      })
+    }
+
+    const option = await getAnswerOptionWithCourse(optionId)
+
+    if (!option) {
+      return res.status(404).json({
+        message: "Answer option not found",
+      })
+    }
+
+    if (
+      option.question.quiz.lesson.course.status ===
+      "PUBLISHED"
+    ) {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
       })
     }
 
@@ -636,6 +740,12 @@ export const updateQuizController = async (
       })
     }
 
+    if (existingQuiz.lesson.course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
+      })
+    }
+
     const quiz = await updateQuiz(
       quizId,
       title.trim()
@@ -672,6 +782,12 @@ export const deleteQuizController = async (
     if (!existingQuiz) {
       return res.status(404).json({
         message: "Quiz not found",
+      })
+    }
+
+    if (existingQuiz.lesson.course.status === "PUBLISHED") {
+      return res.status(409).json({
+        message: "Cannot modify a quiz in a published course",
       })
     }
 

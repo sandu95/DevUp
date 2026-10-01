@@ -157,24 +157,26 @@ function LessonPage() {
                     </p>
                 </div>
 
-                <div className="mt-10 border-t border-slate-100 pt-6">
-                    <button
-                        onClick={handleComplete}
-                        disabled={completed || completing}
-                        className={[
-                            "rounded-xl px-5 py-3 text-sm font-semibold transition",
-                            completed
-                                ? "cursor-default bg-emerald-100 text-emerald-700"
-                                : "bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50",
-                        ].join(" ")}
-                    >
-                        {completed
-                            ? "Lesson completed"
-                            : completing
-                                ? "Saving..."
-                                : "Mark as completed"}
-                    </button>
-                </div>
+                {!quiz && (
+                    <div className="mt-10 border-t border-slate-100 pt-6">
+                        <button
+                            onClick={handleComplete}
+                            disabled={completed || completing}
+                            className={[
+                                "rounded-xl px-5 py-3 text-sm font-semibold transition",
+                                completed
+                                    ? "cursor-default bg-emerald-100 text-emerald-700"
+                                    : "bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50",
+                            ].join(" ")}
+                        >
+                            {completed
+                                ? "Lesson completed"
+                                : completing
+                                    ? "Saving..."
+                                    : "Mark as completed"}
+                        </button>
+                    </div>
+                )}
             </article>
 
             {quiz && (

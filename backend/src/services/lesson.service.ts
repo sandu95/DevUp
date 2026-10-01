@@ -35,6 +35,14 @@ export const getLessonById = async (id: number) => {
     where: {
       id,
     },
+    include: {
+      course: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+    },
   })
 }
 
