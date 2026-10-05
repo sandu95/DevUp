@@ -17,15 +17,6 @@ export async function api<T = any>(
     },
   })
 
-  if (response.status === 401) {
-    localStorage.removeItem("token")
-    localStorage.removeItem("user")
-
-    window.location.href = "/login"
-
-    throw new Error("Session expired")
-  }
-
   const contentType = response.headers.get("content-type")
 
   if (!contentType?.includes("application/json")) {
@@ -33,13 +24,25 @@ export async function api<T = any>(
 
     console.error("Expected JSON, received:", text)
 
-    throw new Error("Server returned an invalid response")
+    const error = new Error(
+      "Server returned an invalid response"
+    )
+
+    ;(error as Error & { status?: number }).status = response.status
+
+    throw error
   }
 
   const data = await response.json()
 
   if (!response.ok) {
-    throw new Error(data.message || "Something went wrong")
+    const error = new Error(
+      data.message || "Something went wrong"
+    )
+
+    ;(error as Error & { status?: number }).status = response.status
+
+    throw error
   }
 
   return data

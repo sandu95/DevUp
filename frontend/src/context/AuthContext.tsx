@@ -53,13 +53,19 @@ export const AuthProvider = ({
           "user",
           JSON.stringify(response.user)
         )
-        
-      } catch {
-        localStorage.removeItem("token")
-        localStorage.removeItem("user")
 
-        setToken(null)
-        setUser(null)
+      } catch (error) {
+        const status = (
+          error as Error & { status?: number }
+        ).status
+
+        if (status === 401) {
+          localStorage.removeItem("token")
+          localStorage.removeItem("user")
+
+          setToken(null)
+          setUser(null)
+        }
       } finally {
         setAuthLoading(false)
       }

@@ -2,217 +2,334 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { api } from "../services/api"
 import type { Enrollment } from "../types/course"
-import { useAuth } from "../context/AuthContext"
+import CourseCard from "../components/CourseCard"
 
 function DashboardPage() {
-  const { user } = useAuth()
-
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
   useEffect(() => {
-    const loadEnrollments = async () => {
+    const loadDashboard = async () => {
       try {
         const data = await api("/enrollments/me")
 
         setEnrollments(data.enrollments)
-      } catch (error) {
-        setError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load courses"
-        )
+      } catch (err) {
+        console.error(err)
+
+        setError("Unable to load your courses.")
       } finally {
         setLoading(false)
       }
     }
 
-    loadEnrollments()
+    loadDashboard()
   }, [])
 
-  const totalCourses = enrollments.length
+  const getProgress = (enrollment: Enrollment) =>
+    enrollment.progress?.percentage ?? 0
 
   const completedCourses = enrollments.filter(
-    (enrollment) =>
-      enrollment.progress.percentage === 100
+    (enrollment) => getProgress(enrollment) === 100
   ).length
 
   const averageProgress =
-    totalCourses === 0
-      ? 0
-      : Math.round(
-          enrollments.reduce(
-            (sum, enrollment) =>
-              sum + enrollment.progress.percentage,
-            0
-          ) / totalCourses
-        )
+    enrollments.length > 0
+      ? Math.round(
+        enrollments.reduce(
+          (total, enrollment) =>
+            total + getProgress(enrollment),
+          0
+        ) / enrollments.length
+      )
+      : 0
 
-  if (loading) {
-    return (
-      <p className="text-sm text-slate-500">
-        Loading dashboard...
-      </p>
-    )
-  }
+  const currentCourse = enrollments.find(
+    (enrollment) => getProgress(enrollment) < 100
+  )
 
-  if (error) {
-    return (
-      <p className="text-sm text-red-600">
-        {error}
-      </p>
-    )
-  }
+  const featuredCourse =
+    currentCourse ?? enrollments[0]
+
+  const featuredProgress = featuredCourse
+    ? getProgress(featuredCourse)
+    : 0
 
   return (
-    <div className="space-y-8">
-      <div>
-        <p className="text-sm font-medium text-indigo-600">
+    <div className="space-y-10">
+
+      {/* Page heading */}
+      <section>
+        <p className="mb-2 text-sm font-medium text-slate-400">
           Dashboard
         </p>
 
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-          Welcome back, {user?.name}
+        <h1 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+          Keep learning.
         </h1>
 
-        <p className="mt-2 text-slate-500">
-          Continue learning and track your progress.
+        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">
+          Continue your courses, track your progress, and
+          build your programming skills one lesson at a time.
         </p>
-      </div>
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-medium text-slate-500">
-            Enrolled courses
-          </p>
-
-          <p className="mt-3 text-3xl font-bold text-slate-900">
-            {totalCourses}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-medium text-slate-500">
-            Completed courses
-          </p>
-
-          <p className="mt-3 text-3xl font-bold text-slate-900">
-            {completedCourses}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-medium text-slate-500">
-            Average progress
-          </p>
-
-          <p className="mt-3 text-3xl font-bold text-slate-900">
-            {averageProgress}%
-          </p>
-        </div>
       </section>
 
-      <section>
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">
-              My courses
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Continue where you left off.
-            </p>
-          </div>
-
-          <Link
-            to="/courses"
-            className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-          >
-            Browse courses
-          </Link>
+      {/* Loading */}
+      {loading && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+          <p className="text-sm text-slate-500">
+            Loading your dashboard...
+          </p>
         </div>
+      )}
 
-        {enrollments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-            <h3 className="font-semibold text-slate-900">
-              No courses yet
-            </h3>
+      {/* Error */}
+      {!loading && error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <p className="text-sm text-red-600">
+            {error}
+          </p>
+        </div>
+      )}
 
-            <p className="mt-2 text-sm text-slate-500">
-              Browse available courses and enroll to start learning.
-            </p>
+      {!loading && !error && (
+        <>
+          {/* Featured course */}
+          {featuredCourse && (
+            <section>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {currentCourse
+                    ? "Continue learning"
+                    : "Recently completed"}
+                </h2>
 
-            <Link
-              to="/courses"
-              className="mt-5 inline-flex rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              Explore courses
-            </Link>
-          </div>
-        ) : (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {enrollments.map((enrollment) => (
-              <Link
-                key={enrollment.id}
-                to={`/courses/${enrollment.course.id}`}
-                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div className="aspect-[16/9] bg-slate-100">
-                  {enrollment.course.imageUrl ? (
-                    <img
-                      src={enrollment.course.imageUrl}
-                      alt={enrollment.course.title}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-400">
-                      Course image
-                    </div>
-                  )}
-                </div>
+                <Link
+                  to="/courses"
+                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950"
+                >
+                  Explore courses →
+                </Link>
+              </div>
 
-                <div className="p-5">
-                  <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600">
-                    {enrollment.course.title}
-                  </h3>
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
 
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
-                    {enrollment.course.description ??
-                      "No description available."}
-                  </p>
+                <div className="grid lg:grid-cols-[1fr_320px]">
 
-                  <div className="mt-5">
-                    <div className="mb-2 flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-500">
-                        Progress
-                      </span>
+                  {/* Main content */}
+                  <div className="p-7 sm:p-9">
 
-                      <span className="font-semibold text-slate-700">
-                        {enrollment.progress.percentage}%
+                    <div className="mb-6">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${featuredProgress === 100
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-500"
+                          }`}
+                      >
+                        {featuredProgress === 100
+                          ? "Completed"
+                          : "In progress"}
                       </span>
                     </div>
 
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-indigo-600"
-                        style={{
-                          width: `${enrollment.progress.percentage}%`,
-                        }}
-                      />
+                    <h3 className="max-w-2xl text-2xl font-bold tracking-tight text-slate-950">
+                      {featuredCourse.course.title}
+                    </h3>
+
+                    {featuredCourse.course.description && (
+                      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
+                        {featuredCourse.course.description}
+                      </p>
+                    )}
+
+                    <div className="mt-8 max-w-xl">
+
+                      <div className="mb-2 flex items-center justify-between text-xs font-medium">
+                        <span className="text-slate-500">
+                          Course progress
+                        </span>
+
+                        <span className="text-slate-900">
+                          {featuredProgress}%
+                        </span>
+                      </div>
+
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-slate-900 transition-all"
+                          style={{
+                            width: `${featuredProgress}%`,
+                          }}
+                        />
+                      </div>
+
                     </div>
 
-                    <p className="mt-2 text-xs text-slate-400">
-                      {enrollment.progress.completedLessons} of{" "}
-                      {enrollment.progress.totalLessons} lessons completed
-                    </p>
+                    <div className="mt-8">
+                      <Link
+                        to={`/courses/${featuredCourse.course.id}`}
+                        className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                      >
+                        {featuredProgress === 100
+                          ? "Review course"
+                          : "Continue course"}
+
+                        <span className="ml-2">
+                          →
+                        </span>
+                      </Link>
+                    </div>
+
                   </div>
+
+                  {/* Progress panel */}
+                  <div className="hidden border-l border-slate-200 bg-slate-50 p-8 lg:block">
+
+                    <div className="flex h-full flex-col justify-between">
+
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                          Your progress
+                        </p>
+
+                        <p className="mt-3 text-5xl font-bold tracking-tight text-slate-950">
+                          {featuredProgress}%
+                        </p>
+
+                        <p className="mt-2 text-sm leading-5 text-slate-500">
+                          {featuredProgress === 100
+                            ? "Course completed."
+                            : "Keep going. You're making progress."}
+                        </p>
+                      </div>
+
+                      <div className="mt-10">
+                        <div className="h-1.5 rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full bg-slate-950"
+                            style={{
+                              width: `${featuredProgress}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                    </div>
+
+                  </div>
+
                 </div>
+              </div>
+            </section>
+          )}
+
+          {/* Empty state */}
+          {enrollments.length === 0 && (
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+
+              <h2 className="text-lg font-semibold text-slate-900">
+                You haven't enrolled in any courses yet.
+              </h2>
+
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+                Explore the DevUp catalog and start learning
+                something new.
+              </p>
+
+              <Link
+                to="/courses"
+                className="mt-6 inline-flex rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+              >
+                Explore courses
               </Link>
-            ))}
-          </div>
-        )}
-      </section>
+
+            </section>
+          )}
+
+          {/* Overview */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Your overview
+              </h2>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                <p className="text-sm text-slate-500">
+                  Enrolled courses
+                </p>
+
+                <p className="mt-4 text-3xl font-bold tracking-tight text-slate-950">
+                  {enrollments.length}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                <p className="text-sm text-slate-500">
+                  Completed
+                </p>
+
+                <p className="mt-4 text-3xl font-bold tracking-tight text-slate-950">
+                  {completedCourses}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                <p className="text-sm text-slate-500">
+                  Average progress
+                </p>
+
+                <p className="mt-4 text-3xl font-bold tracking-tight text-slate-950">
+                  {averageProgress}%
+                </p>
+              </div>
+
+            </div>
+          </section>
+
+          {/* My courses */}
+          {enrollments.length > 0 && (
+            <section>
+
+              <div className="mb-5 flex items-center justify-between">
+
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    My courses
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Courses you're currently learning.
+                  </p>
+                </div>
+
+                <Link
+                  to="/courses"
+                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950"
+                >
+                  View all →
+                </Link>
+
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {enrollments.map((enrollment) => (
+                  <CourseCard
+                    key={enrollment.id}
+                    enrollment={enrollment}
+                  />
+                ))}
+              </div>
+
+            </section>
+          )}
+
+        </>
+      )}
+
     </div>
   )
 }
