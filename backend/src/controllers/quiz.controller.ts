@@ -1,4 +1,6 @@
 import type { Request, Response } from "express"
+import { Prisma } from "../generated/prisma/client.js"
+import { isPositiveInt } from "../lib/validation.js"
 import {
   createAnswerOption,
   createQuestion,
@@ -174,13 +176,13 @@ export const addQuestion = async (
 ) => {
   try {
     const quizId = Number(req.params.quizId)
-    const { text, position } = req.body
+    const { text, position } = req.body ?? {}
 
     if (
       !Number.isInteger(quizId) ||
       quizId <= 0 ||
-      !text ||
-      !Number.isInteger(position)
+      typeof text !== "string" || !text.trim() ||
+      !isPositiveInt(position)
     ) {
       return res.status(400).json({
         message: "Valid quizId, text and position are required",
@@ -212,6 +214,9 @@ export const addQuestion = async (
       question,
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "A question already uses this position in the quiz" })
+    }
     console.error(error)
 
     return res.status(500).json({
@@ -281,6 +286,7 @@ export const addAnswerOption = async (
   }
 }
 
+
 export const submit = async (
   req: AuthRequest,
   res: Response
@@ -293,7 +299,7 @@ export const submit = async (
     }
 
     const quizId = Number(req.params.id)
-    const { answers } = req.body
+    const answers = req.body?.answers
 
     if (!Number.isInteger(quizId) || quizId <= 0) {
       return res.status(400).json({
@@ -309,8 +315,13 @@ export const submit = async (
 
     const invalidAnswer = answers.some(
       (answer) =>
+        !answer ||
+        typeof answer !== "object" ||
+        Array.isArray(answer) ||
         !Number.isInteger(answer.questionId) ||
-        !Number.isInteger(answer.answerOptionId)
+        answer.questionId <= 0 ||
+        !Number.isInteger(answer.answerOptionId) ||
+        answer.answerOptionId <= 0
     )
 
     if (invalidAnswer) {
@@ -327,17 +338,16 @@ export const submit = async (
       })
     }
 
-    if (req.user.role !== "ADMIN") {
-      const enrolled = await isUserEnrolled(
-        req.user.userId,
-        quiz.lesson.courseId
-      )
+    // Submitting a quiz requires enrollment for every role.
+    const enrolled = await isUserEnrolled(
+      req.user.userId,
+      quiz.lesson.courseId
+    )
 
-      if (!enrolled) {
-        return res.status(403).json({
-          message: "You are not enrolled in this course",
-        })
-      }
+    if (!enrolled) {
+      return res.status(403).json({
+        message: "You are not enrolled in this course",
+      })
     }
 
     const result = await submitQuiz(
@@ -352,42 +362,44 @@ export const submit = async (
     })
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === "QUIZ_NOT_FOUND") {
-        return res.status(404).json({
-          message: "Quiz not found",
-        })
-      }
+      switch (error.message) {
+        case "QUIZ_NOT_FOUND":
+          return res.status(404).json({
+            message: "Quiz not found",
+          })
 
-      if (error.message === "QUIZ_HAS_NO_QUESTIONS") {
-        return res.status(400).json({
-          message: "Quiz has no questions",
-        })
-      }
+        case "NOT_ENROLLED":
+          return res.status(403).json({
+            message: "You are not enrolled in this course",
+          })
 
-      if (error.message === "INCOMPLETE_ANSWERS") {
-        return res.status(400).json({
-          message: "All questions must be answered",
-        })
-      }
+        case "QUIZ_HAS_NO_QUESTIONS":
+          return res.status(400).json({
+            message: "Quiz has no questions",
+          })
 
-      if (
-        error.message === "INVALID_QUESTION" ||
-        error.message === "INVALID_ANSWER_OPTION" ||
-        error.message === "DUPLICATE_QUESTION"
-      ) {
-        return res.status(400).json({
-          message: "Invalid quiz answers",
-        })
+        case "INCOMPLETE_ANSWERS":
+          return res.status(400).json({
+            message: "All questions must be answered",
+          })
+
+        case "INVALID_QUESTION":
+        case "INVALID_ANSWER_OPTION":
+        case "DUPLICATE_QUESTION":
+          return res.status(400).json({
+            message: "Invalid quiz answers",
+          })
       }
     }
 
-    console.error(error)
+    console.error("Submit quiz error:", error)
 
     return res.status(500).json({
       message: "Failed to submit quiz",
     })
   }
 }
+
 
 export const getMyAttempts = async (
   req: AuthRequest,
@@ -523,7 +535,7 @@ export const updateQuestionController = async (
 ) => {
   try {
     const questionId = Number(req.params.questionId)
-    const { text, position } = req.body
+    const { text, position } = req.body ?? {}
 
     if (!Number.isInteger(questionId) || questionId <= 0) {
       return res.status(400).json({
@@ -548,6 +560,14 @@ export const updateQuestionController = async (
       })
     }
 
+    if (
+      (text === undefined && position === undefined) ||
+      (text !== undefined && (typeof text !== "string" || !text.trim())) ||
+      (position !== undefined && !isPositiveInt(position))
+    ) {
+      return res.status(400).json({ message: "Valid text or position is required" })
+    }
+
     const question = await updateQuestion(questionId, {
       text,
       position,
@@ -558,6 +578,9 @@ export const updateQuestionController = async (
       question,
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "A question already uses this position in the quiz" })
+    }
     console.error(error)
 
     return res.status(500).json({

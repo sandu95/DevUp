@@ -13,7 +13,7 @@ import {
 
 const router = Router()
 
-router.get("/course/:courseId", getByCourse)
+router.get("/course/:courseId", authenticate, getByCourse)
 
 router.get(
   "/:id",

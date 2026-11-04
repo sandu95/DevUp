@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.js"
-import { markLessonCompleted } from "./progress.service.js"
+import { saveLessonCompletion } from "./progress.service.js"
 
 interface CreateQuizData {
   title: string
@@ -210,6 +210,11 @@ export const submitQuiz = async (
       id: quizId,
     },
     include: {
+      lesson: {
+        select: {
+          courseId: true,
+        },
+      },
       questions: {
         include: {
           options: true,
@@ -220,6 +225,20 @@ export const submitQuiz = async (
 
   if (!quiz) {
     throw new Error("QUIZ_NOT_FOUND")
+  }
+
+  const enrollment = await prisma.enrollment.findFirst({
+    where: {
+      userId,
+      courseId: quiz.lesson.courseId,
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  if (!enrollment) {
+    throw new Error("NOT_ENROLLED")
   }
 
   if (quiz.questions.length === 0) {
@@ -265,9 +284,14 @@ export const submitQuiz = async (
     answerOptionIds.push(option.id)
   }
 
-  const score = Math.round(
-    (correctAnswers / quiz.questions.length) * 100
+
+  const totalQuestions = quiz.questions.length
+
+  const score = Math.floor(
+    (correctAnswers / totalQuestions) * 100
   )
+
+  const passed = correctAnswers === totalQuestions
 
   const attempt = await prisma.$transaction(async (tx) => {
     const createdAttempt = await tx.quizAttempt.create({
@@ -286,22 +310,21 @@ export const submitQuiz = async (
       })),
     })
 
+    if (passed) {
+      await saveLessonCompletion(tx, userId, quiz.lessonId)
+    }
+
     return createdAttempt
   })
-
-  if (score === 100) {
-    await markLessonCompleted(
-      userId,
-      quiz.lessonId
-    )
-  }
 
   return {
     attemptId: attempt.id,
     score,
     correctAnswers,
-    totalQuestions: quiz.questions.length,
+    totalQuestions,
   }
+
+
 }
 
 export const getUserQuizAttempts = async (

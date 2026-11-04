@@ -1,27 +1,79 @@
+
 import { prisma } from "../lib/prisma.js"
+import type { Prisma } from "../generated/prisma/client.js"
+
+// Internal write shared by the authorized manual and quiz completion flows.
+export const saveLessonCompletion = async (
+  tx: Prisma.TransactionClient,
+  userId: number,
+  lessonId: number
+) => {
+  const completedAt = new Date()
+
+  // Concurrent requests may insert the same progress. Never overwrite an
+  // already completed row, including its original completion timestamp.
+  await tx.lessonProgress.createMany({
+    data: [{ userId, lessonId, completed: true, completedAt }],
+    skipDuplicates: true,
+  })
+  await tx.lessonProgress.updateMany({
+    where: { userId, lessonId, completed: false },
+    data: { completed: true, completedAt },
+  })
+
+  return tx.lessonProgress.findUniqueOrThrow({
+    where: { userId_lessonId: { userId, lessonId } },
+  })
+}
 
 export const markLessonCompleted = async (
   userId: number,
   lessonId: number
 ) => {
-  return prisma.lessonProgress.upsert({
+  const lesson = await prisma.lesson.findUnique({
     where: {
-      userId_lessonId: {
-        userId,
-        lessonId,
-      },
+      id: lessonId,
     },
-    update: {
-      completed: true,
-      completedAt: new Date(),
-    },
-    create: {
-      userId,
-      lessonId,
-      completed: true,
-      completedAt: new Date(),
+    select: {
+      id: true,
+      courseId: true,
     },
   })
+
+  if (!lesson) {
+    throw new Error("LESSON_NOT_FOUND")
+  }
+
+  const enrollment = await prisma.enrollment.findFirst({
+    where: {
+      userId,
+      courseId: lesson.courseId,
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  if (!enrollment) {
+    throw new Error("NOT_ENROLLED")
+  }
+
+  const quiz = await prisma.quiz.findUnique({
+    where: {
+      lessonId,
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  if (quiz) {
+    throw new Error("LESSON_HAS_QUIZ")
+  }
+
+  return prisma.$transaction((tx) =>
+    saveLessonCompletion(tx, userId, lessonId)
+  )
 }
 
 export const getUserProgress = async (userId: number) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
 
@@ -30,8 +30,10 @@ interface Question {
 
 function AdminQuestionPage() {
     const { id } = useParams()
-    const questionId = Number(id)
+    return <AdminQuestionContent key={id} questionId={Number(id)} />
+}
 
+function AdminQuestionContent({ questionId }: { questionId: number }) {
     const [question, setQuestion] = useState<Question | null>(null)
 
     const [optionText, setOptionText] = useState("")
@@ -42,36 +44,37 @@ function AdminQuestionPage() {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState("")
+    const routeRequest = useRef<AbortController | null>(null)
 
-    const loadQuestion = async () => {
-        try {
+    const loadQuestion = useCallback((signal: AbortSignal) => {
+        return api<{ question: Question }>(
+            `/quizzes/questions/${questionId}/admin`, { signal }
+        ).then((data) => {
+            if (signal.aborted) return
             setError("")
-
-            const data = await api(
-                `/quizzes/questions/${questionId}/admin`
-            )
-
             setQuestion(data.question)
-        } catch (error) {
+        }).catch((error: unknown) => {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to load question"
             )
-        } finally {
-            setLoading(false)
-        }
-    }
+        }).finally(() => {
+            if (!signal.aborted) setLoading(false)
+        })
+    }, [questionId])
 
     useEffect(() => {
+        const controller = new AbortController()
+        routeRequest.current = controller
         if (!Number.isInteger(questionId) || questionId <= 0) {
-            setError("Invalid question")
-            setLoading(false)
-            return
+            return () => controller.abort()
         }
 
-        loadQuestion()
-    }, [questionId])
+        void loadQuestion(controller.signal)
+        return () => controller.abort()
+    }, [questionId, loadQuestion])
 
     const handleEditOption = (option: AnswerOption) => {
         setEditingOptionId(option.id)
@@ -80,6 +83,8 @@ function AdminQuestionPage() {
     }
 
     const handleDeleteOption = async (optionId: number) => {
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted) return
         const confirmed = window.confirm(
             "Are you sure you want to delete this answer option?"
         )
@@ -93,10 +98,18 @@ function AdminQuestionPage() {
 
             await api(`/quizzes/options/${optionId}`, {
                 method: "DELETE",
+                signal,
             })
 
-            await loadQuestion()
+            if (signal.aborted) return
+            if (editingOptionId === optionId) {
+                setEditingOptionId(null)
+                setOptionText("")
+                setIsCorrect(false)
+            }
+            await loadQuestion(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
@@ -109,6 +122,8 @@ function AdminQuestionPage() {
         event: React.FormEvent<HTMLFormElement>
     ) => {
         event.preventDefault()
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted || saving) return
 
         try {
             setSaving(true)
@@ -117,17 +132,20 @@ function AdminQuestionPage() {
             if (editingOptionId) {
                 await api(`/quizzes/options/${editingOptionId}`, {
                     method: "PATCH",
+                    signal,
                     body: JSON.stringify({
                         text: optionText,
                         isCorrect,
                     }),
                 })
+                if (signal.aborted) return
                 setEditingOptionId(null)
                 setOptionText("")
                 setIsCorrect(false)
             } else {
                 await api(`/quizzes/questions/${questionId}/options`, {
                     method: "POST",
+                    signal,
                     body: JSON.stringify({
                         text: optionText,
                         isCorrect,
@@ -135,18 +153,20 @@ function AdminQuestionPage() {
                 })
             }
 
+            if (signal.aborted) return
             setOptionText("")
             setIsCorrect(false)
 
-            await loadQuestion()
+            await loadQuestion(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to add answer option"
             )
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
     }
 
@@ -156,6 +176,10 @@ function AdminQuestionPage() {
                 option.isCorrect &&
                 option.id !== editingOptionId
         ) ?? false
+
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+        return <p role="alert" className="text-sm text-red-700">Invalid question</p>
+    }
 
     if (loading) {
         return (
@@ -217,11 +241,12 @@ function AdminQuestionPage() {
                         </p>
 
                         <div className="mt-5">
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label htmlFor="answer-text" className="mb-1.5 block text-sm font-medium text-slate-700">
                                 Answer text
                             </label>
 
                             <textarea
+                                id="answer-text"
                                 value={optionText}
                                 onChange={(event) =>
                                     setOptionText(event.target.value)

@@ -1,25 +1,12 @@
 import {
-  createContext,
-  useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
 import type { User } from "../types/auth"
 import { api } from "../services/api"
-
-interface AuthContextType {
-  user: User | null
-  token: string | null
-  isAuthenticated: boolean
-  authLoading: boolean
-  login: (token: string, user: User) => void
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-)
+import { AuthContext } from "./useAuth"
 
 export const AuthProvider = ({
   children,
@@ -33,8 +20,13 @@ export const AuthProvider = ({
   )
 
   const [authLoading, setAuthLoading] = useState(true)
+  const sessionRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    sessionRequest.current = controller
+
     const checkSession = async () => {
       const storedToken = localStorage.getItem("token")
 
@@ -44,7 +36,9 @@ export const AuthProvider = ({
       }
 
       try {
-        const response = await api<{ user: User }>("/users/me")
+        const response = await api<{ user: User }>("/users/me", { signal })
+
+        if (signal.aborted || localStorage.getItem("token") !== storedToken) return
 
         setToken(storedToken)
         setUser(response.user)
@@ -55,11 +49,12 @@ export const AuthProvider = ({
         )
 
       } catch (error) {
+        if (signal.aborted || localStorage.getItem("token") !== storedToken) return
         const status = (
           error as Error & { status?: number }
         ).status
 
-        if (status === 401) {
+        if (status === 401 || status === 404) {
           localStorage.removeItem("token")
           localStorage.removeItem("user")
 
@@ -67,27 +62,32 @@ export const AuthProvider = ({
           setUser(null)
         }
       } finally {
-        setAuthLoading(false)
+        if (!signal.aborted) setAuthLoading(false)
       }
     }
 
-    checkSession()
+    void checkSession()
+    return () => controller.abort()
   }, [])
 
   const login = (token: string, user: User) => {
+    sessionRequest.current?.abort()
     localStorage.setItem("token", token)
     localStorage.setItem("user", JSON.stringify(user))
 
     setToken(token)
     setUser(user)
+    setAuthLoading(false)
   }
 
   const logout = () => {
+    sessionRequest.current?.abort()
     localStorage.removeItem("token")
     localStorage.removeItem("user")
 
     setToken(null)
     setUser(null)
+    setAuthLoading(false)
   }
 
   return (
@@ -104,16 +104,4 @@ export const AuthProvider = ({
       {children}
     </AuthContext.Provider>
   )
-}
-
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider"
-    )
-  }
-
-  return context
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
 
@@ -37,61 +37,64 @@ interface Quiz {
 
 function AdminLessonPage() {
     const { id } = useParams()
-    const lessonId = Number(id)
+    return <AdminLessonContent key={id} lessonId={Number(id)} />
+}
 
+function AdminLessonContent({ lessonId }: { lessonId: number }) {
     const [lesson, setLesson] = useState<Lesson | null>(null)
     const [quiz, setQuiz] = useState<Quiz | null>(null)
 
     const [quizTitle, setQuizTitle] = useState("")
     const [questionText, setQuestionText] = useState("")
-    const [questionPosition, setQuestionPosition] = useState(1)
+    const [questionPosition, setQuestionPosition] = useState<number | null>(null)
 
     const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null)
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState("")
+    const routeRequest = useRef<AbortController | null>(null)
+    const nextQuestionPosition = (quiz?.questions ?? []).reduce(
+        (maximum, question) => Math.max(maximum, question.position), 0
+    ) + 1
 
-    const loadData = async () => {
-        try {
+    const loadData = useCallback((signal: AbortSignal) => {
+        return Promise.all([
+            api<{ lesson: Lesson }>(`/lessons/${lessonId}`, { signal }),
+            api<{ quiz: { id: number } | null }>(`/quizzes/lesson/${lessonId}`, { signal }),
+        ]).then(async ([lessonData, quizData]) => {
+            const adminQuiz = quizData.quiz
+                ? await api<{ quiz: Quiz }>(`/quizzes/${quizData.quiz.id}/admin`, { signal })
+                : null
+            return { lessonData, adminQuiz }
+        }).then(({ lessonData, adminQuiz }) => {
+            if (signal.aborted) return
             setError("")
-
-            const lessonData = await api(`/lessons/${lessonId}`)
             setLesson(lessonData.lesson)
-
-            const quizData = await api(`/quizzes/lesson/${lessonId}`)
-
-            if (quizData.quiz) {
-                const adminQuiz = await api(
-                    `/quizzes/${quizData.quiz.id}/admin`
-                )
-
-                setQuiz(adminQuiz.quiz)
-                setQuizTitle(adminQuiz.quiz.title)
-            } else {
-                setQuiz(null)
-                setQuizTitle("")
-            }
-        } catch (error) {
+            setQuiz(adminQuiz?.quiz ?? null)
+            setQuizTitle(adminQuiz?.quiz.title ?? "")
+        }).catch((error: unknown) => {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to load lesson"
             )
-        } finally {
-            setLoading(false)
-        }
-    }
+        }).finally(() => {
+            if (!signal.aborted) setLoading(false)
+        })
+    }, [lessonId])
 
     useEffect(() => {
+        const controller = new AbortController()
+        routeRequest.current = controller
         if (!Number.isInteger(lessonId) || lessonId <= 0) {
-            setError("Invalid lesson")
-            setLoading(false)
-            return
+            return () => controller.abort()
         }
 
-        loadData()
-    }, [lessonId])
+        void loadData(controller.signal)
+        return () => controller.abort()
+    }, [lessonId, loadData])
 
     const handleEditQuestion = (question: Question) => {
         setEditingQuestionId(question.id)
@@ -100,6 +103,8 @@ function AdminLessonPage() {
     }
 
     const handleDeleteQuestion = async (questionId: number) => {
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted) return
         const confirmed = window.confirm(
             "Are you sure you want to delete this question?"
         )
@@ -113,10 +118,18 @@ function AdminLessonPage() {
 
             await api(`/quizzes/questions/${questionId}`, {
                 method: "DELETE",
+                signal,
             })
 
-            await loadData()
+            if (signal.aborted) return
+            if (editingQuestionId === questionId) {
+                setEditingQuestionId(null)
+                setQuestionText("")
+                setQuestionPosition(null)
+            }
+            await loadData(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
@@ -129,6 +142,8 @@ function AdminLessonPage() {
         event: React.FormEvent<HTMLFormElement>
     ) => {
         event.preventDefault()
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted || saving) return
 
         try {
             setSaving(true)
@@ -137,6 +152,7 @@ function AdminLessonPage() {
             if (quiz) {
                 await api(`/quizzes/${quiz.id}`, {
                     method: "PATCH",
+                    signal,
                     body: JSON.stringify({
                         title: quizTitle,
                     }),
@@ -144,6 +160,7 @@ function AdminLessonPage() {
             } else {
                 await api("/quizzes", {
                     method: "POST",
+                    signal,
                     body: JSON.stringify({
                         title: quizTitle,
                         lessonId,
@@ -151,20 +168,22 @@ function AdminLessonPage() {
                 })
             }
 
-            await loadData()
+            await loadData(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to save quiz"
             )
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
     }
 
     const handleDeleteQuiz = async () => {
-        if (!quiz) return
+        const signal = routeRequest.current?.signal
+        if (!quiz || !signal || signal.aborted || saving) return
 
         const confirmed = window.confirm(
             "Are you sure you want to delete this quiz?"
@@ -180,18 +199,24 @@ function AdminLessonPage() {
 
             await api(`/quizzes/${quiz.id}`, {
                 method: "DELETE",
+                signal,
             })
 
+            if (signal.aborted) return
             setQuiz(null)
             setQuizTitle("")
+            setEditingQuestionId(null)
+            setQuestionText("")
+            setQuestionPosition(null)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to delete quiz"
             )
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
     }
 
@@ -200,7 +225,8 @@ function AdminLessonPage() {
     ) => {
         event.preventDefault()
 
-        if (!quiz) return
+        const signal = routeRequest.current?.signal
+        if (!quiz || !signal || signal.aborted || saving) return
 
         try {
             setSaving(true)
@@ -209,40 +235,44 @@ function AdminLessonPage() {
             if (editingQuestionId) {
                 await api(`/quizzes/questions/${editingQuestionId}`, {
                     method: "PATCH",
+                    signal,
                     body: JSON.stringify({
                         text: questionText,
-                        position: questionPosition,
+                        position: questionPosition ?? nextQuestionPosition,
                     }),
                 })
             } else {
                 await api(`/quizzes/${quiz.id}/questions`, {
                     method: "POST",
+                    signal,
                     body: JSON.stringify({
                         text: questionText,
-                        position: questionPosition,
+                        position: questionPosition ?? nextQuestionPosition,
                     }),
                 })
             }
 
+            if (signal.aborted) return
             setEditingQuestionId(null)
             setQuestionText("")
-            setQuestionPosition(
-                editingQuestionId
-                    ? quiz.questions.length
-                    : quiz.questions.length + 2
-            )
+            setQuestionPosition(null)
 
-            await loadData()
+            await loadData(signal)
 
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to add question"
             )
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
+    }
+
+    if (!Number.isInteger(lessonId) || lessonId <= 0) {
+        return <p role="alert" className="text-sm text-red-700">Invalid lesson</p>
     }
 
     if (loading) {
@@ -306,11 +336,12 @@ function AdminLessonPage() {
                     </p>
 
                     <div className="mt-5">
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                        <label htmlFor="quiz-title" className="mb-1.5 block text-sm font-medium text-slate-700">
                             Quiz title
                         </label>
 
                         <input
+                            id="quiz-title"
                             value={quizTitle}
                             onChange={(event) =>
                                 setQuizTitle(event.target.value)
@@ -366,11 +397,12 @@ function AdminLessonPage() {
 
                             <div className="mt-5 space-y-5">
                                 <div>
-                                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    <label htmlFor="question-text" className="mb-1.5 block text-sm font-medium text-slate-700">
                                         Question
                                     </label>
 
                                     <textarea
+                                        id="question-text"
                                         value={questionText}
                                         onChange={(event) =>
                                             setQuestionText(event.target.value)
@@ -382,14 +414,16 @@ function AdminLessonPage() {
                                 </div>
 
                                 <div>
-                                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    <label htmlFor="question-position" className="mb-1.5 block text-sm font-medium text-slate-700">
                                         Position
                                     </label>
 
                                     <input
+                                        id="question-position"
                                         type="number"
                                         min="1"
-                                        value={questionPosition}
+                                        max="2147483647"
+                                        value={questionPosition ?? nextQuestionPosition}
                                         onChange={(event) =>
                                             setQuestionPosition(
                                                 Number(event.target.value)
@@ -420,9 +454,7 @@ function AdminLessonPage() {
                                         onClick={() => {
                                             setEditingQuestionId(null)
                                             setQuestionText("")
-                                            setQuestionPosition(
-                                                quiz.questions.length + 1
-                                            )
+                                            setQuestionPosition(null)
                                         }}
                                         className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
                                     >

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
 import type { Course } from "../types/course"
@@ -14,19 +14,21 @@ interface Lesson {
 interface LessonForm {
   title: string
   content: string
-  position: number
+  position: number | null
 }
 
 const emptyForm: LessonForm = {
   title: "",
   content: "",
-  position: 1,
+  position: null,
 }
 
 function AdminCoursePage() {
   const { id } = useParams()
-  const courseId = Number(id)
+  return <AdminCourseContent key={id} courseId={Number(id)} />
+}
 
+function AdminCourseContent({ courseId }: { courseId: number }) {
   const [course, setCourse] = useState<Course | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
 
@@ -36,38 +38,42 @@ function AdminCoursePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const routeRequest = useRef<AbortController | null>(null)
+  const nextLessonPosition = lessons.reduce(
+    (maximum, lesson) => Math.max(maximum, lesson.position), 0
+  ) + 1
 
-  const loadData = async () => {
-    try {
+  const loadData = useCallback((signal: AbortSignal) => {
+    return Promise.all([
+      api<{ course: Course }>(`/courses/${courseId}`, { signal }),
+      api<{ lessons: Lesson[] }>(`/lessons/course/${courseId}`, { signal }),
+    ]).then(([courseData, lessonsData]) => {
+      if (signal.aborted) return
       setError("")
-
-      const [courseData, lessonsData] = await Promise.all([
-        api(`/courses/${courseId}`),
-        api(`/lessons/course/${courseId}`),
-      ])
-
       setCourse(courseData.course)
       setLessons(lessonsData.lessons)
-    } catch (error) {
+    }).catch((error: unknown) => {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Failed to load course"
       )
-    } finally {
-      setLoading(false)
-    }
-  }
+    }).finally(() => {
+      if (!signal.aborted) setLoading(false)
+    })
+  }, [courseId])
 
   useEffect(() => {
+    const controller = new AbortController()
+    routeRequest.current = controller
     if (!Number.isInteger(courseId) || courseId <= 0) {
-      setError("Invalid course")
-      setLoading(false)
-      return
+      return () => controller.abort()
     }
 
-    loadData()
-  }, [courseId])
+    void loadData(controller.signal)
+    return () => controller.abort()
+  }, [courseId, loadData])
 
   const resetForm = () => {
     setEditingId(null)
@@ -75,7 +81,7 @@ function AdminCoursePage() {
     setForm({
       title: "",
       content: "",
-      position: lessons.length + 1,
+      position: null,
     })
   }
 
@@ -93,47 +99,56 @@ function AdminCoursePage() {
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault()
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted || saving) return
 
     try {
       setSaving(true)
       setError("")
+      const payload = { ...form, position: form.position ?? nextLessonPosition }
 
       if (editingId) {
         await api(`/lessons/${editingId}`, {
           method: "PATCH",
-          body: JSON.stringify(form),
+          signal,
+          body: JSON.stringify(payload),
         })
       } else {
         await api("/lessons", {
           method: "POST",
+          signal,
           body: JSON.stringify({
-            ...form,
+            ...payload,
             courseId,
           }),
         })
       }
 
-      await loadData()
+      await loadData(signal)
+      if (signal.aborted) return
 
       setEditingId(null)
 
       setForm({
         title: "",
         content: "",
-        position: lessons.length + 2,
+        position: null,
       })
     } catch (error) {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Failed to save lesson"
       )
     } finally {
-      setSaving(false)
+      if (!signal.aborted) setSaving(false)
     }
   }
 
   const handleDelete = async (lessonId: number) => {
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted) return
     const confirmed = window.confirm(
       "Are you sure you want to delete this lesson?"
     )
@@ -147,20 +162,27 @@ function AdminCoursePage() {
 
       await api(`/lessons/${lessonId}`, {
         method: "DELETE",
+        signal,
       })
 
-      await loadData()
+      await loadData(signal)
+      if (signal.aborted) return
 
       if (editingId === lessonId) {
         resetForm()
       }
     } catch (error) {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Failed to delete lesson"
       )
     }
+  }
+
+  if (!Number.isInteger(courseId) || courseId <= 0) {
+    return <p role="alert" className="text-sm text-red-700">Invalid course</p>
   }
 
   if (loading) {
@@ -230,11 +252,12 @@ function AdminCoursePage() {
 
             <div className="mt-6 space-y-5">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-slate-700">
                   Title
                 </label>
 
                 <input
+                  id="lesson-title"
                   value={form.title}
                   onChange={(event) =>
                     setForm((current) => ({
@@ -248,14 +271,16 @@ function AdminCoursePage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="lesson-position" className="mb-1.5 block text-sm font-medium text-slate-700">
                   Position
                 </label>
 
                 <input
+                  id="lesson-position"
                   type="number"
                   min="1"
-                  value={form.position}
+                  max="2147483647"
+                  value={form.position ?? nextLessonPosition}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -268,11 +293,12 @@ function AdminCoursePage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="lesson-content" className="mb-1.5 block text-sm font-medium text-slate-700">
                   Content
                 </label>
 
                 <textarea
+                  id="lesson-content"
                   value={form.content}
                   onChange={(event) =>
                     setForm((current) => ({

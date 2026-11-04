@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
 
@@ -22,119 +22,190 @@ function LessonPage() {
 
   const [lesson, setLesson] = useState<Lesson | null>(null)
   const [quiz, setQuiz] = useState<Quiz | null>(null)
+  const [quizStatus, setQuizStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading")
 
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
+  const [loadError, setLoadError] = useState("")
+  const [actionError, setActionError] = useState("")
   const [completing, setCompleting] = useState(false)
   const [completed, setCompleted] = useState(false)
+  const [progressUnavailable, setProgressUnavailable] = useState(false)
+  const routeRequest = useRef<AbortController | null>(null)
+  const completionPending = useRef(false)
+  const quizCheckPending = useRef(false)
 
   useEffect(() => {
+    const controller = new AbortController()
+    routeRequest.current = controller
+    completionPending.current = false
+    quizCheckPending.current = false
+    let active = true
+
     if (!Number.isInteger(lessonId) || lessonId <= 0) {
-      setError("Invalid lesson")
-      setLoading(false)
-      return
+      return () => controller.abort()
     }
 
     const loadLesson = async () => {
-      try {
-        setError("")
+      setLoading(true)
+      setLoadError("")
+      setActionError("")
+      setLesson(null)
+      setQuiz(null)
+      setQuizStatus("loading")
+      setCompleted(false)
+      setProgressUnavailable(false)
+      setCompleting(false)
 
+      try {
         const lessonData = await api<{
           lesson: Lesson
-        }>(`/lessons/${lessonId}`)
+        }>(`/lessons/${lessonId}`, { signal: controller.signal })
 
+        if (!active) return
         setLesson(lessonData.lesson)
 
-        try {
-          const progressData = await api<{
+        // Both requests are independent: a failed quiz lookup must not
+        // be interpreted as proof that the lesson has no quiz.
+        const [progressResult, quizResult] = await Promise.allSettled([
+          api<{
             progress: {
-              lessons: {
-                id: number
-                completed: boolean
-              }[]
+              lessons: { id: number; completed: boolean }[]
             }
-          }>(`/progress/courses/${lessonData.lesson.courseId}`)
+          }>(`/progress/courses/${lessonData.lesson.courseId}`, { signal: controller.signal }),
+          api<{ quiz: Quiz | null }>(`/quizzes/lesson/${lessonId}`, { signal: controller.signal }),
+        ])
 
-          const lessonProgress =
-            progressData.progress.lessons.find(
-              (item) => item.id === lessonId
-            )
+        if (!active) return
 
-          setCompleted(lessonProgress?.completed ?? false)
-        } catch {
-          setCompleted(false)
+        if (progressResult.status === "fulfilled") {
+          const current = progressResult.value.progress.lessons.find(
+            (item) => item.id === lessonId
+          )
+          setCompleted(current?.completed ?? false)
+        } else {
+          setProgressUnavailable(true)
         }
 
-        try {
-          const quizData = await api<{
-            quiz: Quiz
-          }>(`/quizzes/lesson/${lessonId}`)
-
-          setQuiz(quizData.quiz)
-        } catch {
+        if (quizResult.status === "fulfilled") {
+          setQuiz(quizResult.value.quiz ?? null)
+          setQuizStatus("ready")
+        } else {
           setQuiz(null)
+          setQuizStatus("error")
         }
       } catch (error) {
-        setError(
+        if (!active) return
+        setLoadError(
           error instanceof Error
             ? error.message
             : "Failed to load lesson"
         )
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
-    loadLesson()
+    void loadLesson()
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [lessonId])
 
+  const retryQuizCheck = async () => {
+    if (!lesson || lesson.id !== lessonId || quizCheckPending.current) return
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted) return
+    quizCheckPending.current = true
+
+    setQuizStatus("loading")
+    try {
+      const data = await api<{ quiz: Quiz | null }>(
+        `/quizzes/lesson/${lesson.id}`, { signal }
+      )
+      if (signal.aborted) return
+      setQuiz(data.quiz ?? null)
+      setQuizStatus("ready")
+    } catch {
+      if (signal.aborted) return
+      setQuiz(null)
+      setQuizStatus("error")
+    } finally {
+      if (!signal.aborted) quizCheckPending.current = false
+    }
+  }
+
   const handleComplete = async () => {
+    if (!lesson || lesson.id !== lessonId || quizStatus !== "ready" || quiz || completed || completionPending.current) {
+      return
+    }
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted) return
+    completionPending.current = true
+
     try {
       setCompleting(true)
-      setError("")
+      setActionError("")
 
       await api(`/progress/lessons/${lessonId}/complete`, {
         method: "POST",
+        signal,
       })
 
+      if (signal.aborted) return
       setCompleted(true)
+      setProgressUnavailable(false)
     } catch (error) {
-      setError(
+      if (signal.aborted) return
+      setActionError(
         error instanceof Error
           ? error.message
           : "Failed to complete lesson"
       )
     } finally {
-      setCompleting(false)
+      if (!signal.aborted) {
+        completionPending.current = false
+        setCompleting(false)
+      }
     }
   }
 
-  if (loading) {
+  if (!Number.isInteger(lessonId) || lessonId <= 0) {
+    return <p role="alert" className="text-sm text-red-700">Invalid lesson</p>
+  }
+
+  if (loading || (lesson && lesson.id !== lessonId)) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="animate-pulse space-y-6">
-          <div className="h-4 w-28 rounded bg-slate-200" />
+        <div className="space-y-8">
+          <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
-            <div className="space-y-5">
-              <div className="h-10 w-2/3 rounded bg-slate-200" />
-              <div className="h-5 w-full rounded bg-slate-200" />
-              <div className="h-5 w-5/6 rounded bg-slate-200" />
-              <div className="h-5 w-4/5 rounded bg-slate-200" />
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="space-y-6">
+              <div className="h-5 w-24 animate-pulse rounded bg-slate-200" />
+              <div className="h-11 w-3/4 animate-pulse rounded bg-slate-200" />
+
+              <div className="space-y-3 pt-3">
+                <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+                <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200" />
+              </div>
             </div>
 
-            <div className="h-48 rounded-2xl bg-slate-200" />
+            <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />
           </div>
         </div>
       </div>
     )
   }
 
-  if (error || !lesson) {
+  if (loadError || !lesson) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          {error || "Lesson not found"}
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          {loadError || "Lesson not found"}
         </div>
       </div>
     )
@@ -142,27 +213,24 @@ function LessonPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-
       {/* Back */}
       <Link
         to={`/courses/${lesson.courseId}`}
-        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-950"
+        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-950"
       >
-        <span>←</span>
+        <span aria-hidden="true">←</span>
         Back to course
       </Link>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_280px] lg:items-start">
-
-        {/* Main content */}
-        <main>
-          <div className="rounded-2xl border border-slate-200 bg-white">
-
+      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+        {/* Main */}
+        <main className="min-w-0">
+          <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             {/* Header */}
-            <div className="border-b border-slate-100 px-6 py-7 sm:px-8">
-              <div className="flex items-start justify-between gap-5">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+            <header className="border-b border-slate-100 px-6 py-7 sm:px-9 sm:py-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
                     Lesson {lesson.position}
                   </p>
 
@@ -172,21 +240,22 @@ function LessonPage() {
                 </div>
 
                 {completed && (
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-600">
-                    ✓ Completed
+                  <span className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-600">
+                    <span aria-hidden="true">✓</span>
+                    Completed
                   </span>
                 )}
               </div>
-            </div>
+            </header>
 
-            {/* Content */}
-            <article className="px-6 py-8 sm:px-8 sm:py-10">
+            {/* Lesson content */}
+            <div className="px-6 py-8 sm:px-9 sm:py-10">
               <div className="max-w-3xl">
                 {lesson.content.split("\n").map((paragraph, index) => (
                   <p
                     key={index}
                     className={[
-                      "text-base leading-8 text-slate-700",
+                      "text-[15px] leading-8 text-slate-700",
                       index > 0 ? "mt-5" : "",
                     ].join(" ")}
                   >
@@ -194,19 +263,23 @@ function LessonPage() {
                   </p>
                 ))}
               </div>
-            </article>
+            </div>
 
-            {/* Completion */}
-            {!quiz && (
-              <div className="border-t border-slate-100 px-6 py-6 sm:px-8">
+            {/* Only lessons confirmed to have no quiz can be completed manually. */}
+            {quizStatus === "ready" && !quiz && (
+              <div className="border-t border-slate-100 px-6 py-6 sm:px-9">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
-                      Finished this lesson?
+                      {completed
+                        ? "Lesson completed"
+                        : "Finished this lesson?"}
                     </p>
 
                     <p className="mt-1 text-xs text-slate-400">
-                      Mark it as completed to update your progress.
+                      {completed
+                        ? "Your progress has been updated."
+                        : "Mark it as completed to update your course progress."}
                     </p>
                   </div>
 
@@ -215,7 +288,7 @@ function LessonPage() {
                     onClick={handleComplete}
                     disabled={completed || completing}
                     className={[
-                      "shrink-0 rounded-xl px-5 py-3 text-sm font-semibold transition",
+                      "shrink-0 rounded-xl px-5 py-3 text-sm font-semibold transition-colors",
                       completed
                         ? "cursor-default bg-emerald-50 text-emerald-600"
                         : "bg-slate-950 text-white hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50",
@@ -228,52 +301,115 @@ function LessonPage() {
                         : "Mark as completed"}
                   </button>
                 </div>
+
+                {actionError && (
+                  <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                    <p className="text-xs leading-5 text-red-600">
+                      {actionError}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </article>
+
+          {quizStatus === "loading" && (
+            <p className="mt-4 text-sm text-slate-500">
+              Checking for a lesson quiz...
+            </p>
+          )}
+
+          {quizStatus === "error" && (
+            <div role="alert" className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <p className="text-sm font-semibold text-amber-900">
+                Could not check whether this lesson has a quiz.
+              </p>
+              <p className="mt-1 text-sm text-amber-800">
+                Manual completion is unavailable until this check succeeds.
+              </p>
+              <button
+                type="button"
+                onClick={retryQuizCheck}
+                className="mt-3 text-sm font-semibold text-amber-900 underline underline-offset-4"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {progressUnavailable && (
+            <p role="status" className="mt-4 text-sm text-amber-700">
+              Progress could not be loaded. The completion status may be outdated.
+            </p>
+          )}
 
           {/* Quiz */}
           {quiz && (
-            <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-6 sm:p-7">
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-                    Next step
-                  </p>
+            <section className="mt-6 overflow-hidden rounded-2xl border border-indigo-100 bg-indigo-50">
+              <div className="p-6 sm:p-7">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
+                      Knowledge check
+                    </p>
 
-                  <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
-                    {quiz.title}
-                  </h2>
+                    <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">
+                      {quiz.title}
+                    </h2>
 
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                    Test your understanding of this lesson with a short quiz.
-                  </p>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                      Test your understanding of this lesson with a
+                      short quiz.
+                    </p>
+                  </div>
+
+                  <Link
+                    to={`/quizzes/${quiz.id}`}
+                    className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600"
+                  >
+                    {completed ? "Retake quiz" : "Start quiz"}
+                    <span className="ml-2" aria-hidden="true">
+                      →
+                    </span>
+                  </Link>
                 </div>
-
-                <Link
-                  to={`/quizzes/${quiz.id}`}
-                  className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                >
-                  Start quiz
-                  <span className="ml-2">→</span>
-                </Link>
               </div>
             </section>
+          )}
+
+          {/* Next lesson hint */}
+          {completed && quizStatus === "ready" && !quiz && (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-6 py-5">
+              <p className="text-sm font-semibold text-slate-900">
+                Lesson completed
+              </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Return to the course to continue with the next
+                lesson.
+              </p>
+
+              <Link
+                to={`/courses/${lesson.courseId}`}
+                className="mt-4 inline-flex text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
+              >
+                Back to course →
+              </Link>
+            </div>
           )}
         </main>
 
         {/* Sidebar */}
         <aside className="lg:sticky lg:top-24">
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
-
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Lesson
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Current lesson
             </p>
 
             <div className="mt-4 flex items-center gap-3">
               <div
                 className={[
-                  "flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold",
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold",
                   completed
                     ? "bg-emerald-50 text-emerald-600"
                     : "bg-indigo-50 text-indigo-600",
@@ -288,35 +424,47 @@ function LessonPage() {
                 </p>
 
                 <p className="mt-0.5 truncate text-xs text-slate-400">
-                  {completed ? "Completed" : "In progress"}
+                  {progressUnavailable
+                    ? "Progress unavailable"
+                    : completed
+                      ? "Completed"
+                      : "In progress"}
                 </p>
               </div>
             </div>
 
+            {/* Status */}
             <div className="mt-6 border-t border-slate-100 pt-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                 Status
               </p>
 
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-sm text-slate-600">
-                  {completed ? "Completed" : "Not completed"}
+                  {progressUnavailable
+                    ? "Unavailable"
+                    : completed
+                      ? "Completed"
+                      : "Not completed"}
                 </span>
 
                 <span
                   className={[
                     "h-2.5 w-2.5 rounded-full",
-                    completed
-                      ? "bg-emerald-500"
-                      : "bg-slate-300",
+                    progressUnavailable
+                      ? "bg-amber-500"
+                      : completed
+                        ? "bg-emerald-500"
+                        : "bg-slate-300",
                   ].join(" ")}
                 />
               </div>
             </div>
 
+            {/* Quiz */}
             {quiz && (
               <div className="mt-5 border-t border-slate-100 pt-5">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                   Assessment
                 </p>
 
@@ -326,9 +474,9 @@ function LessonPage() {
 
                 <Link
                   to={`/quizzes/${quiz.id}`}
-                  className="mt-3 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="mt-3 inline-flex text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
                 >
-                  Take quiz →
+                  {completed ? "Retake quiz" : "Take quiz"} →
                 </Link>
               </div>
             )}

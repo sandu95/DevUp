@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { api } from "../services/api"
 import type { Course } from "../types/course"
 import { Link } from "react-router-dom"
@@ -25,28 +25,31 @@ function AdminPage() {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState("")
+    const routeRequest = useRef<AbortController | null>(null)
 
-    const loadCourses = async () => {
-        try {
+    const loadCourses = useCallback((signal: AbortSignal) => {
+        return api<{ courses: Course[] }>("/courses", { signal }).then((data) => {
+            if (signal.aborted) return
             setError("")
-
-            const data = await api("/courses")
-
             setCourses(data.courses)
-        } catch (error) {
+        }).catch((error: unknown) => {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to load courses"
             )
-        } finally {
-            setLoading(false)
-        }
-    }
+        }).finally(() => {
+            if (!signal.aborted) setLoading(false)
+        })
+    }, [])
 
     useEffect(() => {
-        loadCourses()
-    }, [])
+        const controller = new AbortController()
+        routeRequest.current = controller
+        void loadCourses(controller.signal)
+        return () => controller.abort()
+    }, [loadCourses])
 
     const handleChange = (
         event:
@@ -87,6 +90,8 @@ function AdminPage() {
         event: React.FormEvent<HTMLFormElement>
     ) => {
         event.preventDefault()
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted || saving) return
 
         try {
             setSaving(true)
@@ -102,11 +107,13 @@ function AdminPage() {
             if (editingId) {
                 await api(`/courses/${editingId}`, {
                     method: "PATCH",
+                    signal,
                     body: JSON.stringify(payload),
                 })
             } else {
                 await api("/courses", {
                     method: "POST",
+                    signal,
                     body: JSON.stringify({
                         title: form.title,
                         description: form.description || undefined,
@@ -115,20 +122,24 @@ function AdminPage() {
                 })
             }
 
+            if (signal.aborted) return
             resetForm()
-            await loadCourses()
+            await loadCourses(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message
                     : "Failed to save course"
             )
         } finally {
-            setSaving(false)
+            if (!signal.aborted) setSaving(false)
         }
     }
 
     const handleDelete = async (course: Course) => {
+        const signal = routeRequest.current?.signal
+        if (!signal || signal.aborted) return
         const confirmed = window.confirm(
             `Are you sure you want to permanently delete "${course.title}"?\n\nThis will also delete all lessons, quizzes, enrollments, progress and quiz attempts associated with this course.`
         )
@@ -142,14 +153,17 @@ function AdminPage() {
 
             await api(`/courses/${course.id}`, {
                 method: "DELETE",
+                signal,
             })
 
+            if (signal.aborted) return
             if (editingId === course.id) {
                 resetForm()
             }
 
-            await loadCourses()
+            await loadCourses(signal)
         } catch (error) {
+            if (signal.aborted) return
             setError(
                 error instanceof Error
                     ? error.message

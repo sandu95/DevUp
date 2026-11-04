@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
 import type { Course } from "../types/course"
+import { useAuth } from "../context/useAuth"
 
 interface Lesson {
   id: number
   title: string
-  content: string
   position: number
-  courseId: number
 }
 
 interface Enrollment {
@@ -41,6 +40,8 @@ interface CourseProgress {
 function CourseDetailsPage() {
   const { id } = useParams()
   const courseId = Number(id)
+  const { user } = useAuth()
+  const isAdmin = user?.role === "ADMIN"
 
   const [course, setCourse] = useState<Course | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
@@ -50,30 +51,43 @@ function CourseDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [enrolling, setEnrolling] = useState(false)
   const [error, setError] = useState("")
+  const [progressUnavailable, setProgressUnavailable] = useState(false)
+  const [reload, setReload] = useState(0)
+  const routeRequest = useRef<AbortController | null>(null)
+  const enrollmentPending = useRef(false)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    routeRequest.current = controller
+    enrollmentPending.current = false
     if (!Number.isInteger(courseId) || courseId <= 0) {
-      setError("Invalid course")
-      setLoading(false)
-      return
+      return () => controller.abort()
     }
 
     const loadCourse = async () => {
       try {
         setLoading(true)
         setError("")
+        setCourse(null)
+        setLessons([])
+        setProgress(null)
+        setProgressUnavailable(false)
+        setEnrolled(false)
+        setEnrolling(false)
 
         const [courseData, lessonsData, enrollmentsData] =
           await Promise.all([
-            api<{ course: Course }>(`/courses/${courseId}`),
+            api<{ course: Course }>(`/courses/${courseId}`, { signal }),
             api<{ lessons: Lesson[] }>(
-              `/lessons/course/${courseId}`
+              isAdmin ? `/lessons/course/${courseId}` : `/courses/${courseId}/curriculum`, { signal }
             ),
             api<{ enrollments: Enrollment[] }>(
-              "/enrollments/me"
+              "/enrollments/me", { signal }
             ),
           ])
 
+        if (signal.aborted) return
         setCourse(courseData.course)
         setLessons(lessonsData.lessons)
 
@@ -87,92 +101,124 @@ function CourseDetailsPage() {
           try {
             const progressData = await api<{
               progress: CourseProgress
-            }>(`/progress/courses/${courseId}`)
+            }>(`/progress/courses/${courseId}`, { signal })
 
+            if (signal.aborted) return
             setProgress(progressData.progress)
           } catch {
+            if (signal.aborted) return
             setProgress(null)
+            setProgressUnavailable(true)
           }
         } else {
           setProgress(null)
         }
       } catch (error) {
+        if (signal.aborted) return
         setError(
           error instanceof Error
             ? error.message
             : "Failed to load course"
         )
       } finally {
-        setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
 
-    loadCourse()
-  }, [courseId])
+    void loadCourse()
+    return () => controller.abort()
+  }, [courseId, isAdmin, reload])
 
   const handleEnroll = async () => {
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted || enrollmentPending.current || enrolled) return
+    enrollmentPending.current = true
     try {
       setEnrolling(true)
       setError("")
 
       await api(`/enrollments/courses/${courseId}`, {
         method: "POST",
+        signal,
       })
 
+      if (signal.aborted) return
       setEnrolled(true)
 
-      const progressData = await api<{
-        progress: CourseProgress
-      }>(`/progress/courses/${courseId}`)
-
-      setProgress(progressData.progress)
+      try {
+        const progressData = await api<{
+          progress: CourseProgress
+        }>(`/progress/courses/${courseId}`, { signal })
+        if (!signal.aborted) setProgress(progressData.progress)
+      } catch {
+        if (!signal.aborted) setProgressUnavailable(true)
+      }
     } catch (error) {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Failed to enroll in course"
       )
     } finally {
-      setEnrolling(false)
+      if (!signal.aborted) {
+        enrollmentPending.current = false
+        setEnrolling(false)
+      }
     }
   }
 
-  const isLessonCompleted = (lessonId: number) => {
-    return (
-      progress?.lessons.find(
-        (lesson) => lesson.id === lessonId
-      )?.completed ?? false
+  const completedLessonIds = useMemo(() => {
+    return new Set(
+      progress?.lessons
+        .filter((lesson) => lesson.completed)
+        .map((lesson) => lesson.id) ?? []
     )
+  }, [progress])
+
+  const isLessonCompleted = (lessonId: number) => {
+    return completedLessonIds.has(lessonId)
   }
 
   const nextLesson = useMemo(() => {
-    if (!enrolled) {
+    if (!enrolled || !progress) {
       return null
     }
 
-    return lessons.find(
-      (lesson) => !isLessonCompleted(lesson.id)
-    ) ?? null
-  }, [lessons, progress, enrolled])
+    return (
+      lessons.find(
+        (lesson) => !completedLessonIds.has(lesson.id)
+      ) ?? null
+    )
+  }, [lessons, completedLessonIds, enrolled, progress])
 
   const isCourseCompleted =
     enrolled &&
     lessons.length > 0 &&
-    lessons.every((lesson) => isLessonCompleted(lesson.id))
+    lessons.every((lesson) =>
+      completedLessonIds.has(lesson.id)
+    )
 
-  if (loading) {
+  if (!Number.isInteger(courseId) || courseId <= 0) {
+    return <p role="alert" className="text-sm text-red-700">Invalid course</p>
+  }
+
+  if (loading || (course && course.id !== courseId)) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
         <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
 
-        <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-5">
-            <div className="h-10 w-2/3 animate-pulse rounded bg-slate-200" />
-            <div className="h-5 w-full animate-pulse rounded bg-slate-200" />
-            <div className="h-5 w-4/5 animate-pulse rounded bg-slate-200" />
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-6">
+            <div className="h-5 w-20 animate-pulse rounded bg-slate-200" />
+            <div className="h-12 w-3/4 animate-pulse rounded bg-slate-200" />
+            <div className="space-y-2">
+              <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200" />
+            </div>
           </div>
 
-          <div className="h-72 animate-pulse rounded-2xl bg-slate-200" />
+          <div className="h-80 animate-pulse rounded-2xl bg-slate-200" />
         </div>
       </div>
     )
@@ -180,7 +226,7 @@ function CourseDetailsPage() {
 
   if (error && !course) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
         {error}
       </div>
     )
@@ -188,7 +234,7 @@ function CourseDetailsPage() {
 
   if (!course) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
         Course not found
       </div>
     )
@@ -197,27 +243,25 @@ function CourseDetailsPage() {
   const percentage = progress?.percentage ?? 0
 
   return (
-    <div className="space-y-10">
-
+    <div className="space-y-12">
       {/* Back */}
       <Link
         to="/courses"
-        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-950"
+        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-950"
       >
-        <span>←</span>
+        <span aria-hidden="true">←</span>
         Back to courses
       </Link>
 
       {/* Hero */}
-      <section className="grid gap-8 lg:grid-cols-[1fr_360px]">
-
-        {/* Course information */}
-        <div className="flex flex-col justify-center">
+      <section className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+        {/* Information */}
+        <div className="flex min-w-0 flex-col justify-center">
           <span className="w-fit rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
             Course
           </span>
 
-          <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
             {course.title}
           </h1>
 
@@ -227,36 +271,35 @@ function CourseDetailsPage() {
           </p>
 
           {/* Stats */}
-          <div className="mt-8 flex flex-wrap gap-8 border-y border-slate-200 py-5">
+          <div className="mt-8 flex flex-wrap gap-x-10 gap-y-5 border-y border-slate-200 py-5">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Lessons
               </p>
-
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {lessons.length}
               </p>
             </div>
 
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Format
               </p>
-
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 Self-paced
               </p>
             </div>
 
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Status
               </p>
-
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {isCourseCompleted
                   ? "Completed"
-                  : enrolled
+                    : enrolled && !progress
+                      ? "Progress unavailable"
+                    : enrolled
                     ? "In progress"
                     : "Not started"}
               </p>
@@ -264,9 +307,17 @@ function CourseDetailsPage() {
           </div>
 
           {/* Progress */}
+          {enrolled && progressUnavailable && (
+            <div role="status" className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Progress could not be loaded. Your saved progress has not changed.
+              <button type="button" onClick={() => setReload((value) => value + 1)} className="ml-2 font-semibold underline">
+                Retry
+              </button>
+            </div>
+          )}
           {enrolled && progress && (
             <div className="mt-8 max-w-2xl">
-              <div className="flex items-center justify-between">
+              <div className="flex items-end justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">
                     Your progress
@@ -286,19 +337,16 @@ function CourseDetailsPage() {
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div
                   className="h-full rounded-full bg-indigo-600 transition-all duration-500"
-                  style={{
-                    width: `${percentage}%`,
-                  }}
+                  style={{ width: `${percentage}%` }}
                 />
               </div>
             </div>
           )}
         </div>
 
-        {/* Course card */}
+        {/* Course action card */}
         <aside>
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
             <div className="aspect-[16/10] bg-slate-100">
               {course.imageUrl ? (
                 <img
@@ -333,16 +381,22 @@ function CourseDetailsPage() {
                     type="button"
                     onClick={handleEnroll}
                     disabled={enrolling}
-                    className="mt-6 w-full rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-6 w-full rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {enrolling
-                      ? "Enrolling..."
-                      : "Enroll in course"}
+                    {enrolling ? "Enrolling..." : "Enroll in course"}
                   </button>
                 </>
+              ) : !progress ? (
+                <p role="status" className="text-sm text-slate-500">
+                  Your enrollment is confirmed. Load your progress to continue where you left off.
+                </p>
               ) : isCourseCompleted ? (
                 <>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-600">
+                    ✓
+                  </div>
+
+                  <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-emerald-600">
                     Course completed
                   </p>
 
@@ -357,7 +411,7 @@ function CourseDetailsPage() {
                   {lessons.length > 0 && (
                     <Link
                       to={`/lessons/${lessons[0].id}`}
-                      className="mt-6 flex w-full items-center justify-center rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      className="mt-6 flex w-full items-center justify-center rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                     >
                       Review course
                     </Link>
@@ -378,13 +432,17 @@ function CourseDetailsPage() {
                     your progress.
                   </p>
 
-                  {nextLesson && (
+                  {nextLesson ? (
                     <Link
                       to={`/lessons/${nextLesson.id}`}
-                      className="mt-6 flex w-full items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                      className="mt-6 flex w-full items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600"
                     >
                       Continue learning
                     </Link>
+                  ) : (
+                    <div className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-center text-xs font-medium text-slate-500">
+                      All available lessons are completed.
+                    </div>
                   )}
                 </>
               )}
@@ -401,7 +459,7 @@ function CourseDetailsPage() {
         </aside>
       </section>
 
-      {/* Lessons */}
+      {/* Curriculum */}
       <section>
         <div className="mb-5 flex items-end justify-between gap-4">
           <div>
@@ -426,7 +484,7 @@ function CourseDetailsPage() {
         </div>
 
         {lessons.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
             <p className="text-sm text-slate-500">
               No lessons available yet.
             </p>
@@ -440,9 +498,9 @@ function CourseDetailsPage() {
                 return (
                   <div
                     key={lesson.id}
-                    className="flex items-center gap-4 px-5 py-4 transition hover:bg-slate-50"
+                    className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
                   >
-                    {/* Number / status */}
+                    {/* Status */}
                     <div
                       className={[
                         "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
@@ -460,7 +518,7 @@ function CourseDetailsPage() {
                           : String(lesson.position).padStart(2, "0")}
                     </div>
 
-                    {/* Lesson information */}
+                    {/* Lesson */}
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-slate-400">
                         Lesson {lesson.position}
@@ -476,13 +534,13 @@ function CourseDetailsPage() {
                       <Link
                         to={`/lessons/${lesson.id}`}
                         className={[
-                          "shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition",
+                          "shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
                           completed
                             ? "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                             : "bg-slate-950 text-white hover:bg-indigo-600",
                         ].join(" ")}
                       >
-                        {completed ? "Review" : "Start"}
+                        {!progress ? "Open" : completed ? "Review" : "Start"}
                       </Link>
                     ) : (
                       <span className="shrink-0 rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-400">

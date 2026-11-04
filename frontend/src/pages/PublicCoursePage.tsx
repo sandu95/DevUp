@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { api } from "../services/api"
-import { useAuth } from "../context/AuthContext"
+import { useAuth } from "../context/useAuth"
 import type { Course, Curriculum } from "../types/course"
 
 function PublicCoursePage() {
   const { id } = useParams()
-  const courseId = Number(id)
+  return <PublicCourseContent key={id} courseId={Number(id)} />
+}
 
+function PublicCourseContent({ courseId }: { courseId: number }) {
   const navigate = useNavigate()
   const { isAuthenticated } = useAuth()
 
@@ -16,40 +18,45 @@ function PublicCoursePage() {
   const [loading, setLoading] = useState(true)
   const [enrolling, setEnrolling] = useState(false)
   const [error, setError] = useState("")
+  const routeRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    routeRequest.current = controller
+    if (!Number.isInteger(courseId) || courseId <= 0) {
+      return () => controller.abort()
+    }
+
     const loadData = async () => {
       try {
-        setError("")
-
         const [courseData, curriculumData] = await Promise.all([
-          api<{ course: Course }>(`/courses/${courseId}`),
-          api<Curriculum>(`/courses/${courseId}/curriculum`),
+          api<{ course: Course }>(`/courses/${courseId}`, { signal }),
+          api<Curriculum>(`/courses/${courseId}/curriculum`, { signal }),
         ])
 
+        if (signal.aborted) return
         setCourse(courseData.course)
         setCurriculum(curriculumData)
       } catch (error) {
+        if (signal.aborted) return
         setError(
           error instanceof Error
             ? error.message
             : "Failed to load course"
         )
       } finally {
-        setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
-      setError("Invalid course")
-      setLoading(false)
-      return
-    }
-
-    loadData()
+    void loadData()
+    return () => controller.abort()
   }, [courseId])
 
   const handleEnroll = async () => {
+    const signal = routeRequest.current?.signal
+    if (!signal || signal.aborted || enrolling) return
     if (!isAuthenticated) {
       navigate("/login")
       return
@@ -61,18 +68,24 @@ function PublicCoursePage() {
 
       await api(`/enrollments/courses/${courseId}`, {
         method: "POST",
+        signal,
       })
 
-      navigate(`/courses/${courseId}`)
+      if (!signal.aborted) navigate(`/courses/${courseId}`)
     } catch (error) {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Failed to enroll"
       )
     } finally {
-      setEnrolling(false)
+      if (!signal.aborted) setEnrolling(false)
     }
+  }
+
+  if (!Number.isInteger(courseId) || courseId <= 0) {
+    return <p role="alert" className="text-sm text-red-700">Invalid course</p>
   }
 
   if (loading) {

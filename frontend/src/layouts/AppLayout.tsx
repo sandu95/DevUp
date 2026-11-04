@@ -4,7 +4,7 @@ import {
   Outlet,
   useNavigate,
 } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
+import { useAuth } from "../context/useAuth"
 
 function AppLayout() {
   const { user, logout } = useAuth()
@@ -27,9 +27,9 @@ function AppLayout() {
     isActive: boolean
   }) =>
     [
-      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
       isActive
-        ? "bg-slate-950 text-white"
+        ? "bg-slate-950 text-white shadow-sm"
         : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
     ].join(" ")
 
@@ -68,7 +68,6 @@ function AppLayout() {
 
           {/* Navigation */}
           <div className="flex flex-1 flex-col px-4 py-6">
-
             <nav className="space-y-1">
 
               <NavLink
@@ -137,7 +136,7 @@ function AppLayout() {
               </NavLink>
 
               {user?.role === "ADMIN" && (
-                <div className="pt-5">
+                <div className="pt-6">
                   <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                     Management
                   </p>
@@ -194,6 +193,7 @@ function AppLayout() {
               </div>
 
               <button
+                type="button"
                 onClick={handleLogout}
                 className="mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
               >
@@ -248,7 +248,7 @@ function AppLayout() {
                 <button
                   type="button"
                   onClick={closeMobileMenu}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
                 >
                   <svg
                     className="h-5 w-5"
@@ -310,8 +310,9 @@ function AppLayout() {
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleLogout}
-                  className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
                 >
                   Log out
                 </button>
@@ -329,7 +330,7 @@ function AppLayout() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 lg:hidden"
+              className="rounded-xl border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 lg:hidden"
               aria-label="Open menu"
             >
               <svg

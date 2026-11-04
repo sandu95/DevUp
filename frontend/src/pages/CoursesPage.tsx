@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { api } from "../services/api"
 import type { Course, Enrollment } from "../types/course"
-import { useAuth } from "../context/AuthContext"
 
 type Filter = "all" | "enrolled" | "available"
 
@@ -17,49 +16,46 @@ function CoursesPage() {
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
 
-  const { isAuthenticated } = useAuth()
-  const navigate = useNavigate()
-
   useEffect(() => {
-    const loadData = async () => {
+    const loadCourses = async () => {
       try {
         setLoading(true)
         setError("")
 
-        const coursesData = await api("/courses")
+        const [coursesData, enrollmentsData] =
+          await Promise.all([
+            api<{ courses: Course[] }>("/courses"),
+            api<{ enrollments: Enrollment[] }>(
+              "/enrollments/me"
+            ),
+          ])
 
         setCourses(coursesData.courses)
-
-        if (isAuthenticated) {
-          const enrollmentsData = await api("/enrollments/me")
-
-          setEnrollments(enrollmentsData.enrollments)
-        } else {
-          setEnrollments([])
-        }
+        setEnrollments(enrollmentsData.enrollments)
       } catch (error) {
+        console.error(error)
+
         setError(
           error instanceof Error
             ? error.message
-            : "Failed to load courses"
+            : "Failed to load courses."
         )
       } finally {
         setLoading(false)
       }
     }
 
-    loadData()
-  }, [isAuthenticated])
+    loadCourses()
+  }, [])
 
-  const isEnrolled = (courseId: number) =>
-    enrollments.some(
-      (enrollment) => enrollment.course.id === courseId
+  const enrollmentMap = useMemo(() => {
+    return new Map(
+      enrollments.map((enrollment) => [
+        enrollment.course.id,
+        enrollment,
+      ])
     )
-
-  const getEnrollment = (courseId: number) =>
-    enrollments.find(
-      (enrollment) => enrollment.course.id === courseId
-    )
+  }, [enrollments])
 
   const filteredCourses = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
@@ -67,12 +63,14 @@ function CoursesPage() {
     return courses.filter((course) => {
       const matchesSearch =
         normalizedSearch === "" ||
-        course.title.toLowerCase().includes(normalizedSearch) ||
+        course.title
+          .toLowerCase()
+          .includes(normalizedSearch) ||
         course.description
           ?.toLowerCase()
           .includes(normalizedSearch)
 
-      const enrolled = isEnrolled(course.id)
+      const enrolled = enrollmentMap.has(course.id)
 
       const matchesFilter =
         filter === "all" ||
@@ -81,19 +79,21 @@ function CoursesPage() {
 
       return matchesSearch && matchesFilter
     })
-  }, [courses, enrollments, search, filter])
+  }, [
+    courses,
+    enrollmentMap,
+    search,
+    filter,
+  ])
 
   const handleEnroll = async (courseId: number) => {
-    if (!isAuthenticated) {
-      navigate("/login")
-      return
-    }
-
     try {
       setActionCourseId(courseId)
       setError("")
 
-      const data = await api(
+      const data = await api<{
+        enrollment: Enrollment
+      }>(
         `/enrollments/courses/${courseId}`,
         {
           method: "POST",
@@ -105,24 +105,36 @@ function CoursesPage() {
         ...current,
       ])
     } catch (error) {
+      console.error(error)
+
       setError(
         error instanceof Error
           ? error.message
-          : "Failed to enroll"
+          : "Failed to enroll."
       )
     } finally {
       setActionCourseId(null)
     }
   }
 
+  const clearFilters = () => {
+    setSearch("")
+    setFilter("all")
+  }
+
   if (loading) {
     return (
       <div className="space-y-8">
-        <div>
+
+        <section>
           <div className="h-3 w-20 animate-pulse rounded bg-slate-200" />
-          <div className="mt-3 h-9 w-64 animate-pulse rounded bg-slate-200" />
-          <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-slate-100" />
-        </div>
+
+          <div className="mt-3 h-10 w-64 animate-pulse rounded bg-slate-200" />
+
+          <div className="mt-3 h-5 w-[28rem] max-w-full animate-pulse rounded bg-slate-100" />
+        </section>
+
+        <div className="h-12 w-full max-w-xl animate-pulse rounded-xl bg-slate-200/70" />
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((item) => (
@@ -130,16 +142,17 @@ function CoursesPage() {
               key={item}
               className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
             >
-              <div className="h-36 animate-pulse bg-slate-100" />
+              <div className="h-40 animate-pulse bg-slate-100" />
 
               <div className="space-y-4 p-5">
                 <div className="h-5 w-3/4 animate-pulse rounded bg-slate-100" />
-                <div className="h-12 animate-pulse rounded bg-slate-100" />
+                <div className="h-16 animate-pulse rounded bg-slate-100" />
                 <div className="h-10 animate-pulse rounded bg-slate-100" />
               </div>
             </div>
           ))}
         </div>
+
       </div>
     )
   }
@@ -163,10 +176,10 @@ function CoursesPage() {
         </p>
       </section>
 
-      {/* Search + filters */}
+      {/* Search and filters */}
       <section className="space-y-4">
 
-        <div className="relative max-w-xl">
+        <div className="relative w-full max-w-xl">
           <svg
             className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
             viewBox="0 0 24 24"
@@ -254,7 +267,7 @@ function CoursesPage() {
 
       {/* Empty state */}
       {filteredCourses.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
 
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
             <svg
@@ -274,7 +287,7 @@ function CoursesPage() {
             </svg>
           </div>
 
-          <h2 className="mt-4 font-semibold text-slate-900">
+          <h2 className="mt-4 text-base font-semibold text-slate-900">
             No courses found
           </h2>
 
@@ -286,26 +299,24 @@ function CoursesPage() {
           {(search || filter !== "all") && (
             <button
               type="button"
-              onClick={() => {
-                setSearch("")
-                setFilter("all")
-              }}
+              onClick={clearFilters}
               className="mt-5 text-sm font-semibold text-slate-900 underline underline-offset-4"
             >
               Clear filters
             </button>
           )}
 
-        </div>
+        </section>
       )}
 
-      {/* Courses */}
+      {/* Course grid */}
       {filteredCourses.length > 0 && (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
           {filteredCourses.map((course) => {
-            const enrolled = isEnrolled(course.id)
-            const enrollment = getEnrollment(course.id)
+            const enrollment = enrollmentMap.get(course.id)
+            const enrolled = Boolean(enrollment)
+
             const actionLoading =
               actionCourseId === course.id
 
@@ -321,7 +332,7 @@ function CoursesPage() {
                 {/* Image */}
                 <Link
                   to={`/courses/${course.id}`}
-                  className="block h-36 overflow-hidden bg-slate-100"
+                  className="block h-40 overflow-hidden bg-slate-100"
                 >
                   {course.imageUrl ? (
                     <img
@@ -342,7 +353,6 @@ function CoursesPage() {
                 <div className="p-5">
 
                   <div className="flex items-start justify-between gap-3">
-
                     <h2 className="line-clamp-2 min-h-12 text-base font-semibold leading-6 text-slate-900">
                       {course.title}
                     </h2>
@@ -352,18 +362,16 @@ function CoursesPage() {
                         Enrolled
                       </span>
                     )}
-
                   </div>
 
                   <p className="mt-3 line-clamp-3 min-h-[72px] text-sm leading-6 text-slate-500">
-                    {course.description ??
+                    {course.description ||
                       "No description available."}
                   </p>
 
                   {/* Progress */}
                   {enrolled && (
                     <div className="mt-5">
-
                       <div className="mb-2 flex items-center justify-between text-xs">
                         <span className="text-slate-400">
                           Progress
@@ -376,13 +384,12 @@ function CoursesPage() {
 
                       <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-slate-900 transition-all"
+                          className="h-full rounded-full bg-slate-950 transition-all"
                           style={{
                             width: `${progress}%`,
                           }}
                         />
                       </div>
-
                     </div>
                   )}
 
@@ -394,7 +401,9 @@ function CoursesPage() {
                         to={`/courses/${course.id}`}
                         className="flex-1 rounded-lg bg-slate-950 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-slate-800"
                       >
-                        Continue
+                        {progress === 100
+                          ? "Review"
+                          : "Continue"}
                       </Link>
                     ) : (
                       <button
@@ -413,7 +422,7 @@ function CoursesPage() {
 
                     <Link
                       to={`/courses/${course.id}`}
-                      className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                      className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
                     >
                       Details
                     </Link>

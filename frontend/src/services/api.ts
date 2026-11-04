@@ -1,10 +1,11 @@
-export async function api<T = any>(
+export async function api<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const token = localStorage.getItem("token")
 
-  const response = await fetch(`http://localhost:3000/api${endpoint}`, {
+  const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"
+  const response = await fetch(`${apiUrl}${endpoint}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

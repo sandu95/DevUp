@@ -1,19 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const {
-  lessonProgressUpsertMock,
+  lessonProgressCreateMock,
+  lessonProgressUpdateMock,
+  lessonProgressReadMock,
+  lessonFindUniqueMock,
+  enrollmentMock,
+  quizMock,
   lessonFindManyMock,
 } = vi.hoisted(() => ({
-  lessonProgressUpsertMock: vi.fn(),
+  lessonProgressCreateMock: vi.fn(),
+  lessonProgressUpdateMock: vi.fn(),
+  lessonProgressReadMock: vi.fn(),
+  lessonFindUniqueMock: vi.fn(),
+  enrollmentMock: vi.fn(),
+  quizMock: vi.fn(),
   lessonFindManyMock: vi.fn(),
 }))
 
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
-    lessonProgress: {
-      upsert: lessonProgressUpsertMock,
-    },
+    $transaction: vi.fn(async (callback) => callback({
+      lessonProgress: {
+        createMany: lessonProgressCreateMock,
+        updateMany: lessonProgressUpdateMock,
+        findUniqueOrThrow: lessonProgressReadMock,
+      },
+    })),
+    enrollment: { findFirst: enrollmentMock },
+    quiz: { findUnique: quizMock },
     lesson: {
+      findUnique: lessonFindUniqueMock,
       findMany: lessonFindManyMock,
     },
   },
@@ -26,7 +43,10 @@ import {
 
 describe("Progress service", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    lessonFindUniqueMock.mockResolvedValue({ id: 10, courseId: 5 })
+    enrollmentMock.mockResolvedValue({ id: 1 })
+    quizMock.mockResolvedValue(null)
   })
 
   it("should mark a lesson as completed", async () => {
@@ -38,31 +58,36 @@ describe("Progress service", () => {
       completedAt: new Date(),
     }
 
-    lessonProgressUpsertMock.mockResolvedValue(mockProgress)
+    lessonProgressReadMock.mockResolvedValue(mockProgress)
 
     const result = await markLessonCompleted(1, 10)
 
-    expect(lessonProgressUpsertMock).toHaveBeenCalledWith({
-      where: {
-        userId_lessonId: {
-          userId: 1,
-          lessonId: 10,
-        },
-      },
-      update: {
-        completed: true,
-        completedAt: expect.any(Date),
-      },
-      create: {
+    expect(lessonProgressCreateMock).toHaveBeenCalledWith({
+      skipDuplicates: true,
+      data: [{
         userId: 1,
         lessonId: 10,
         completed: true,
         completedAt: expect.any(Date),
-      },
+      }],
+    })
+    expect(lessonProgressUpdateMock).toHaveBeenCalledWith({
+      where: { userId: 1, lessonId: 10, completed: false },
+      data: { completed: true, completedAt: expect.any(Date) },
     })
 
     expect(result).toEqual(mockProgress)
   })
+
+  it.each(["LESSON_NOT_FOUND", "NOT_ENROLLED", "LESSON_HAS_QUIZ"])(
+    "rejects %s before writing progress", async (error) => {
+      if (error === "LESSON_NOT_FOUND") lessonFindUniqueMock.mockResolvedValue(null)
+      if (error === "NOT_ENROLLED") enrollmentMock.mockResolvedValue(null)
+      if (error === "LESSON_HAS_QUIZ") quizMock.mockResolvedValue({ id: 20 })
+      await expect(markLessonCompleted(1, 10)).rejects.toThrow(error)
+      expect(lessonProgressCreateMock).not.toHaveBeenCalled()
+    }
+  )
 
   it("should calculate course progress correctly", async () => {
     lessonFindManyMock.mockResolvedValue([

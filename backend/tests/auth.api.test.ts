@@ -1,10 +1,39 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import request from "supertest"
 import app from "../src/app.js"
 import jwt from "jsonwebtoken"
 import { prisma } from "../src/lib/prisma.js"
 
 describe("Authentication API", () => {
+    const userIds: number[] = []
+    const registrationEmails: string[] = []
+    let studentId: number
+    let adminId: number
+
+    beforeAll(async () => {
+        process.env.JWT_SECRET = "test-secret"
+        for (const role of ["STUDENT", "ADMIN"] as const) {
+            const user = await prisma.user.create({ data: {
+                name: "Authentication Test User",
+                email: `auth-${crypto.randomUUID()}@example.com`,
+                password: "unused-test-password",
+                role,
+            } })
+            userIds.push(user.id)
+        }
+        ;[studentId, adminId] = userIds as [number, number]
+    })
+
+    afterAll(async () => {
+        if (userIds.length || registrationEmails.length) {
+            await prisma.user.deleteMany({ where: { OR: [
+                { id: { in: userIds } },
+                { email: { in: registrationEmails } },
+            ] } })
+        }
+        await prisma.$disconnect()
+    })
+
     it("should reject /users/me without authentication token", async () => {
         const response = await request(app)
             .get("/api/users/me")
@@ -29,21 +58,48 @@ describe("Authentication API", () => {
     })
 
     it("should accept a valid JWT", async () => {
-        process.env.JWT_SECRET = "test-secret"
-
         const token = jwt.sign(
             {
-                userId: 1,
+                userId: studentId,
                 role: "STUDENT",
             },
-            process.env.JWT_SECRET
+            process.env.JWT_SECRET!
         )
 
         const response = await request(app)
             .get("/api/users/me")
             .set("Authorization", `Bearer ${token}`)
 
+        expect(response.status).toBe(200)
+        expect(response.body.user).toMatchObject({ id: studentId, role: "STUDENT" })
+        expect(response.body.user).not.toHaveProperty("password")
+    })
+
+    it("should reject an expired session with 401", async () => {
+        const token = jwt.sign(
+            { userId: studentId, role: "STUDENT" },
+            process.env.JWT_SECRET!,
+            { expiresIn: -1 }
+        )
+        const response = await request(app).get("/api/users/me")
+            .set("Authorization", `Bearer ${token}`)
+        expect(response.status).toBe(401)
+        expect(response.body).not.toHaveProperty("user")
+    })
+
+    it("should return 404 when the session user has been deleted", async () => {
+        const user = await prisma.user.create({ data: {
+            name: "Deleted Session Test User",
+            email: `deleted-auth-${crypto.randomUUID()}@example.com`,
+            password: "unused-test-password",
+        } })
+        userIds.push(user.id)
+        const token = jwt.sign({ userId: user.id, role: "STUDENT" }, process.env.JWT_SECRET!)
+        await prisma.user.delete({ where: { id: user.id } })
+        const response = await request(app).get("/api/users/me")
+            .set("Authorization", `Bearer ${token}`)
         expect(response.status).toBe(404)
+        expect(response.body).toEqual({ message: "User not found" })
     })
 
     it("should reject a student from an admin-only endpoint", async () => {
@@ -51,7 +107,7 @@ describe("Authentication API", () => {
 
         const token = jwt.sign(
             {
-                userId: 1,
+                userId: studentId,
                 role: "STUDENT",
             },
             process.env.JWT_SECRET
@@ -73,7 +129,7 @@ describe("Authentication API", () => {
 
         const token = jwt.sign(
             {
-                userId: 1,
+                userId: adminId,
                 role: "ADMIN",
             },
             process.env.JWT_SECRET
@@ -90,13 +146,8 @@ describe("Authentication API", () => {
     })
 
     it("should register, login and fetch the current user", async () => {
-        const email = `test-${Date.now()}@example.com`
-
-        await prisma.user.deleteMany({
-            where: {
-                email,
-            },
-        })
+        const email = `test-${crypto.randomUUID()}@example.com`
+        registrationEmails.push(email)
 
         const registerResponse = await request(app)
             .post("/api/auth/register")
@@ -113,6 +164,12 @@ describe("Authentication API", () => {
             email,
             role: "STUDENT",
         })
+        expect(registerResponse.body.user).not.toHaveProperty("password")
+
+        const failedLogin = await request(app).post("/api/auth/login")
+            .send({ email, password: "incorrect-password" })
+        expect(failedLogin.status).toBe(401)
+        expect(failedLogin.body).not.toHaveProperty("token")
 
         const loginResponse = await request(app)
             .post("/api/auth/login")
@@ -138,6 +195,7 @@ describe("Authentication API", () => {
             email,
             role: "STUDENT",
         })
+        expect(meResponse.body.user).not.toHaveProperty("password")
 
         await prisma.user.deleteMany({
             where: {

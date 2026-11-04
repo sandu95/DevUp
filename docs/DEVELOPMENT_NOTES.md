@@ -350,8 +350,8 @@ database.
 The current suite contains:
 
 ``` text
-41 tests
-41 passed
+82 tests
+82 passed
 ```
 
 The tests cover the main backend areas:
@@ -547,13 +547,20 @@ git push
 -   lesson progress;
 -   course progress calculation;
 -   automated backend testing;
--   41 passing automated tests;
+-   82 passing automated tests;
 -   Git/GitHub versioning.
 
 ### Current verification state
 
 ``` text
-Automated tests: 41/41 passed
+Automated tests: 82/82 passed (13 suites, 2026-11-04)
+Backend build: passed
+Frontend build: passed
+Frontend ESLint: passed (0 errors, 0 warnings)
+Browser interaction: 14/14 Playwright tests passed in Edge (headless)
+Viewports: desktop and mobile 390x844
+Frontend E2E TypeScript: passed
+Original lesson/quiz stabilization plan (steps 1-6): completed
 ```
 
 ------------------------------------------------------------------------
@@ -602,7 +609,11 @@ npm start
 npm test
 ```
 
-### Specific test file
+### Frontend browser tests
+
+From `frontend`, run `npm run test:e2e`. Tests use installed Microsoft Edge and start isolated servers on ports 3001/5180 against the database in `backend/.env.test`. See `frontend/e2e/README.md` for setup and report instructions. Reports and screenshots are excluded from Git.
+
+### Specific backend test file
 
 ``` powershell
 npm test <test-file>.test.ts

@@ -1,4 +1,6 @@
 import type { Request, Response } from "express"
+import { Prisma } from "../generated/prisma/client.js"
+import { isPositiveInt } from "../lib/validation.js"
 import type { AuthRequest } from "../middleware/auth.middleware.js"
 import { isUserEnrolled } from "../services/enrollment.service.js"
 import {
@@ -12,13 +14,13 @@ import { getCourseById } from "../services/course.service.js"
 
 export const create = async (req: Request, res: Response) => {
   try {
-    const { title, content, position, courseId } = req.body
+    const { title, content, position, courseId } = req.body ?? {}
 
     if (
-      !title ||
-      !content ||
-      !Number.isInteger(position) ||
-      !Number.isInteger(courseId)
+      typeof title !== "string" || !title.trim() ||
+      typeof content !== "string" || !content.trim() ||
+      !isPositiveInt(position) ||
+      !isPositiveInt(courseId)
     ) {
       return res.status(400).json({
         message: "Title, content, position and courseId are required",
@@ -51,6 +53,9 @@ export const create = async (req: Request, res: Response) => {
       lesson,
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "A lesson already uses this position in the course" })
+    }
     console.error(error)
 
     return res.status(500).json({
@@ -59,14 +64,32 @@ export const create = async (req: Request, res: Response) => {
   }
 }
 
-export const getByCourse = async (req: Request, res: Response) => {
+export const getByCourse = async (req: AuthRequest, res: Response) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" })
+    }
+
     const courseId = Number(req.params.courseId)
 
     if (!Number.isInteger(courseId) || courseId <= 0) {
       return res.status(400).json({
         message: "Invalid course id",
       })
+    }
+
+    const course = await getCourseById(courseId)
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" })
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const enrolled = await isUserEnrolled(req.user.userId, courseId)
+      if (!enrolled) {
+        return res.status(403).json({
+          message: "You are not enrolled in this course",
+        })
+      }
     }
 
     const lessons = await getLessonsByCourse(courseId)
@@ -169,7 +192,15 @@ export const update = async (req: Request, res: Response) => {
       })
     }
 
-    const { title, content, position } = req.body
+    const { title, content, position } = req.body ?? {}
+    if (
+      (title === undefined && content === undefined && position === undefined) ||
+      (title !== undefined && (typeof title !== "string" || !title.trim())) ||
+      (content !== undefined && (typeof content !== "string" || !content.trim())) ||
+      (position !== undefined && !isPositiveInt(position))
+    ) {
+      return res.status(400).json({ message: "Valid title, content or position is required" })
+    }
 
     const lesson = await updateLesson(id, {
       title,
@@ -182,6 +213,9 @@ export const update = async (req: Request, res: Response) => {
       lesson,
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "A lesson already uses this position in the course" })
+    }
     console.error(error)
 
     return res.status(500).json({

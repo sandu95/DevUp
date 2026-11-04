@@ -12,12 +12,13 @@ function DashboardPage() {
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        const data = await api("/enrollments/me")
+        const data = await api<{ enrollments: Enrollment[] }>(
+          "/enrollments/me"
+        )
 
         setEnrollments(data.enrollments)
       } catch (err) {
         console.error(err)
-
         setError("Unable to load your courses.")
       } finally {
         setLoading(false)
@@ -37,12 +38,12 @@ function DashboardPage() {
   const averageProgress =
     enrollments.length > 0
       ? Math.round(
-        enrollments.reduce(
-          (total, enrollment) =>
-            total + getProgress(enrollment),
-          0
-        ) / enrollments.length
-      )
+          enrollments.reduce(
+            (total, enrollment) =>
+              total + getProgress(enrollment),
+            0
+          ) / enrollments.length
+        )
       : 0
 
   const currentCourse = enrollments.find(
@@ -57,9 +58,9 @@ function DashboardPage() {
     : 0
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
 
-      {/* Page heading */}
+      {/* Header */}
       <section>
         <p className="mb-2 text-sm font-medium text-slate-400">
           Dashboard
@@ -77,10 +78,14 @@ function DashboardPage() {
 
       {/* Loading */}
       {loading && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-          <p className="text-sm text-slate-500">
-            Loading your dashboard...
-          </p>
+        <div className="space-y-4">
+          <div className="h-72 animate-pulse rounded-2xl bg-slate-200/60" />
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="h-28 animate-pulse rounded-2xl bg-slate-200/60" />
+            <div className="h-28 animate-pulse rounded-2xl bg-slate-200/60" />
+            <div className="h-28 animate-pulse rounded-2xl bg-slate-200/60" />
+          </div>
         </div>
       )}
 
@@ -114,26 +119,24 @@ function DashboardPage() {
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="grid lg:grid-cols-[1fr_280px]">
 
-                <div className="grid lg:grid-cols-[1fr_320px]">
-
-                  {/* Main content */}
+                  {/* Course information */}
                   <div className="p-7 sm:p-9">
 
-                    <div className="mb-6">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${featuredProgress === 100
-                            ? "bg-slate-900 text-white"
-                            : "bg-slate-100 text-slate-500"
-                          }`}
-                      >
-                        {featuredProgress === 100
-                          ? "Completed"
-                          : "In progress"}
-                      </span>
-                    </div>
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                        featuredProgress === 100
+                          ? "bg-slate-950 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {featuredProgress === 100
+                        ? "Completed"
+                        : "In progress"}
+                    </span>
 
-                    <h3 className="max-w-2xl text-2xl font-bold tracking-tight text-slate-950">
+                    <h3 className="mt-5 max-w-2xl text-2xl font-bold tracking-tight text-slate-950">
                       {featuredCourse.course.title}
                     </h3>
 
@@ -144,7 +147,6 @@ function DashboardPage() {
                     )}
 
                     <div className="mt-8 max-w-xl">
-
                       <div className="mb-2 flex items-center justify-between text-xs font-medium">
                         <span className="text-slate-500">
                           Course progress
@@ -157,68 +159,53 @@ function DashboardPage() {
 
                       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-slate-900 transition-all"
+                          className="h-full rounded-full bg-slate-950 transition-all"
                           style={{
                             width: `${featuredProgress}%`,
                           }}
                         />
                       </div>
-
                     </div>
 
-                    <div className="mt-8">
-                      <Link
-                        to={`/courses/${featuredCourse.course.id}`}
-                        className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
-                      >
-                        {featuredProgress === 100
-                          ? "Review course"
-                          : "Continue course"}
+                    <Link
+                      to={`/courses/${featuredCourse.course.id}`}
+                      className="mt-8 inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                    >
+                      {featuredProgress === 100
+                        ? "Review course"
+                        : "Continue course"}
 
-                        <span className="ml-2">
-                          →
-                        </span>
-                      </Link>
-                    </div>
-
+                      <span className="ml-2">
+                        →
+                      </span>
+                    </Link>
                   </div>
 
-                  {/* Progress panel */}
-                  <div className="hidden border-l border-slate-200 bg-slate-50 p-8 lg:block">
+                  {/* Progress summary */}
+                  <div className="border-t border-slate-200 bg-slate-50 p-7 lg:border-l lg:border-t-0 lg:p-8">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Progress
+                    </p>
 
-                    <div className="flex h-full flex-col justify-between">
+                    <p className="mt-3 text-5xl font-bold tracking-tight text-slate-950">
+                      {featuredProgress}%
+                    </p>
 
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                          Your progress
-                        </p>
+                    <p className="mt-2 text-sm leading-5 text-slate-500">
+                      {featuredProgress === 100
+                        ? "You completed this course."
+                        : "Keep going. You're making progress."}
+                    </p>
 
-                        <p className="mt-3 text-5xl font-bold tracking-tight text-slate-950">
-                          {featuredProgress}%
-                        </p>
-
-                        <p className="mt-2 text-sm leading-5 text-slate-500">
-                          {featuredProgress === 100
-                            ? "Course completed."
-                            : "Keep going. You're making progress."}
-                        </p>
-                      </div>
-
-                      <div className="mt-10">
-                        <div className="h-1.5 rounded-full bg-slate-200">
-                          <div
-                            className="h-full rounded-full bg-slate-950"
-                            style={{
-                              width: `${featuredProgress}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-
+                    <div className="mt-8 h-1.5 rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-slate-950 transition-all"
+                        style={{
+                          width: `${featuredProgress}%`,
+                        }}
+                      />
                     </div>
-
                   </div>
-
                 </div>
               </div>
             </section>
@@ -226,8 +213,7 @@ function DashboardPage() {
 
           {/* Empty state */}
           {enrollments.length === 0 && (
-            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
-
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
               <h2 className="text-lg font-semibold text-slate-900">
                 You haven't enrolled in any courses yet.
               </h2>
@@ -243,7 +229,6 @@ function DashboardPage() {
               >
                 Explore courses
               </Link>
-
             </section>
           )}
 
@@ -293,9 +278,7 @@ function DashboardPage() {
           {/* My courses */}
           {enrollments.length > 0 && (
             <section>
-
-              <div className="mb-5 flex items-center justify-between">
-
+              <div className="mb-5 flex items-end justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">
                     My courses
@@ -312,7 +295,6 @@ function DashboardPage() {
                 >
                   View all →
                 </Link>
-
               </div>
 
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -323,13 +305,10 @@ function DashboardPage() {
                   />
                 ))}
               </div>
-
             </section>
           )}
-
         </>
       )}
-
     </div>
   )
 }
