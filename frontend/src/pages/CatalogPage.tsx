@@ -10,25 +10,30 @@ function CatalogPage() {
   const [search, setSearch] = useState("")
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
     const loadCourses = async () => {
       try {
         setError("")
 
-        const data = await api<{ courses: Course[] }>("/courses")
+        const data = await api<{ courses: Course[] }>("/courses", { signal })
 
+        if (signal.aborted) return
         setCourses(data.courses)
       } catch (error) {
+        if (signal.aborted) return
         setError(
           error instanceof Error
             ? error.message
             : "Failed to load courses"
         )
       } finally {
-        setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
 
-    loadCourses()
+    void loadCourses()
+    return () => controller.abort()
   }, [])
 
   const filteredCourses = useMemo(() => {
@@ -117,6 +122,7 @@ function CatalogPage() {
 
             <input
               type="search"
+              aria-label="Search courses"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search courses..."

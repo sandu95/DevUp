@@ -72,7 +72,7 @@ export const getByCourse = async (req: AuthRequest, res: Response) => {
 
     const courseId = Number(req.params.courseId)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -84,6 +84,9 @@ export const getByCourse = async (req: AuthRequest, res: Response) => {
     }
 
     if (req.user.role !== "ADMIN") {
+      if (course.status !== "PUBLISHED") {
+        return res.status(404).json({ message: "Course not found" })
+      }
       const enrolled = await isUserEnrolled(req.user.userId, courseId)
       if (!enrolled) {
         return res.status(403).json({
@@ -119,7 +122,7 @@ export const getOne = async (
 
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid lesson id",
       })
@@ -134,6 +137,9 @@ export const getOne = async (
     }
 
     if (req.user.role !== "ADMIN") {
+      if (lesson.course.status !== "PUBLISHED") {
+        return res.status(404).json({ message: "Lesson not found" })
+      }
       const enrolled = await isUserEnrolled(
         req.user.userId,
         lesson.courseId
@@ -162,7 +168,7 @@ export const update = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid lesson id",
       })
@@ -228,7 +234,7 @@ export const remove = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid lesson id",
       })

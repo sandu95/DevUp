@@ -22,6 +22,7 @@ interface Quiz {
   lesson: {
     id: number
     courseId: number
+    course: { status: "DRAFT" | "PUBLISHED" }
   }
   questions: Question[]
 }
@@ -124,7 +125,7 @@ function QuizPage() {
   }
 
   const handleSubmit = async () => {
-    if (!quiz || quiz.id !== quizId || submissionPending.current) return
+    if (!quiz || quiz.lesson.course.status !== "PUBLISHED" || quiz.id !== quizId || submissionPending.current) return
     const signal = routeRequest.current?.signal
     if (!signal || signal.aborted) return
 
@@ -368,6 +369,11 @@ function QuizPage() {
         Back to lesson
       </Link>
 
+      {quiz.lesson.course.status === "DRAFT" && (
+        <p role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Draft preview. Publish the course and enroll before submitting answers.
+        </p>
+      )}
       <header className="mt-8">
         <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
           Knowledge check
@@ -543,7 +549,7 @@ function QuizPage() {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || !allAnswered}
+                disabled={quiz.lesson.course.status !== "PUBLISHED" || submitting || !allAnswered}
                 className="w-full rounded-xl bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 sm:w-auto"
               >
                 {submitting ? "Submitting..." : "Submit quiz"}

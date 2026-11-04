@@ -37,10 +37,11 @@ export const markLessonCompleted = async (
     select: {
       id: true,
       courseId: true,
+      course: { select: { status: true } },
     },
   })
 
-  if (!lesson) {
+  if (!lesson || lesson.course.status !== "PUBLISHED") {
     throw new Error("LESSON_NOT_FOUND")
   }
 
@@ -80,6 +81,7 @@ export const getUserProgress = async (userId: number) => {
   return prisma.lessonProgress.findMany({
     where: {
       userId,
+      lesson: { course: { status: "PUBLISHED" } },
     },
     include: {
       lesson: {
@@ -142,7 +144,7 @@ export const getCourseProgress = async (
   const percentage =
     totalLessons === 0
       ? 0
-      : Math.round((completedLessons / totalLessons) * 100)
+      : Math.floor((completedLessons / totalLessons) * 100)
 
   return {
     courseId,

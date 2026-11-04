@@ -197,7 +197,7 @@ function AdminPage() {
             </div>
 
             {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {error}
                 </div>
             )}
@@ -223,11 +223,12 @@ function AdminPage() {
 
                     <div className="space-y-5">
                         <div>
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
                                 Title
                             </label>
 
                             <input
+                                id="course-title"
                                 name="title"
                                 value={form.title}
                                 onChange={handleChange}
@@ -237,11 +238,12 @@ function AdminPage() {
                         </div>
 
                         <div>
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
                                 Description
                             </label>
 
                             <textarea
+                                id="course-description"
                                 name="description"
                                 value={form.description}
                                 onChange={handleChange}
@@ -251,11 +253,12 @@ function AdminPage() {
                         </div>
 
                         <div>
-                            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                            <label htmlFor="course-image" className="mb-1.5 block text-sm font-medium text-slate-700">
                                 Image URL
                             </label>
 
                             <input
+                                id="course-image"
                                 name="imageUrl"
                                 value={form.imageUrl}
                                 onChange={handleChange}
@@ -265,11 +268,12 @@ function AdminPage() {
 
                         {editingId && (
                             <div>
-                                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                <label htmlFor="course-status" className="mb-1.5 block text-sm font-medium text-slate-700">
                                     Status
                                 </label>
 
                                 <select
+                                    id="course-status"
                                     name="status"
                                     value={form.status}
                                     onChange={handleChange}
@@ -334,7 +338,7 @@ function AdminPage() {
                                 {courses.map((course) => (
                                     <div
                                         key={course.id}
-                                        className="flex items-center gap-4 p-5"
+                                        className="flex flex-wrap items-center gap-4 p-5"
                                     >
                                         <div className="h-16 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100">
                                             {course.imageUrl ? (

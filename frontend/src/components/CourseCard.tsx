@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import type { Enrollment } from "../types/course"
+import { isCourseCompleted } from "../utils/progress"
 
 type CourseCardProps = {
   enrollment: Enrollment
@@ -37,7 +38,7 @@ function CourseCard({ enrollment }: CourseCardProps) {
             {enrollment.course.title}
           </h3>
 
-          {progress === 100 && (
+          {isCourseCompleted(enrollment.progress) && (
             <span className="shrink-0 text-xs font-semibold text-slate-400">
               Done
             </span>

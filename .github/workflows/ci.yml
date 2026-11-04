@@ -1,0 +1,79 @@
+name: DevUp checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: devup_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devup_ci_test?schema=public
+      JWT_SECRET: ephemeral-ci-test-secret
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci --prefix backend
+          npm ci --prefix frontend
+      - name: Write test configuration
+        run: >-
+          node --input-type=module -e "import {writeFileSync} from 'node:fs';
+          writeFileSync('backend/.env.test', 'DATABASE_URL=' + process.env.DATABASE_URL + '\nJWT_SECRET=' + process.env.JWT_SECRET + '\n');"
+      - name: Generate Prisma client and deploy test migrations
+        run: |
+          npm run db:generate --prefix backend
+          npm run db:deploy:test --prefix backend
+      - name: Backend tests and build
+        run: |
+          npm test --prefix backend
+          npm run build --prefix backend
+      - name: Frontend checks
+        run: |
+          npm run lint --prefix frontend
+          npm run typecheck:e2e --prefix frontend
+          npm run build --prefix frontend
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BROWSER_CHANNEL: chromium
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7

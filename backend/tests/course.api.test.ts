@@ -53,6 +53,10 @@ describe("Courses API", () => {
     })
 
     it("should publish the course", async () => {
+        const lesson = await request(app).post("/api/lessons")
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({ courseId, title: "Ready lesson", content: "Lesson content", position: 1 })
+        expect(lesson.status).toBe(201)
         const response = await request(app)
             .patch(`/api/courses/${courseId}`)
             .set("Authorization", `Bearer ${adminToken}`)

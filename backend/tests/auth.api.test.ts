@@ -145,6 +145,28 @@ describe("Authentication API", () => {
         expect(typeof response.body.users).toBe("number")
     })
 
+    it.each([
+        { email: {}, password: "secret" }, { email: "user@example.com", password: 123 }, {},
+    ])("rejects malformed login fields with 400", async (body) => {
+        expect((await request(app).post("/api/auth/login").send(body)).status).toBe(400)
+    })
+
+    it.each([
+        { name: 12, email: "user@example.com", password: "123456" },
+        { name: "User", email: "invalid", password: "123456" },
+        { name: "User", email: "user@example.com", password: {} }, {},
+    ])("rejects malformed registration fields with 400", async (body) => {
+        expect((await request(app).post("/api/auth/register").send(body)).status).toBe(400)
+    })
+
+    it("maps simultaneous registration of the same email to one success and one conflict", async () => {
+        const email = `duplicate-${crypto.randomUUID()}@example.com`
+        registrationEmails.push(email)
+        const results = await Promise.all([1, 2].map(() => request(app).post("/api/auth/register")
+            .send({ name: "Concurrent User", email, password: "test123456" })))
+        expect(results.map((result) => result.status).sort()).toEqual([201, 409])
+    })
+
     it("should register, login and fetch the current user", async () => {
         const email = `test-${crypto.randomUUID()}@example.com`
         registrationEmails.push(email)

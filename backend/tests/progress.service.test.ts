@@ -44,7 +44,7 @@ import {
 describe("Progress service", () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    lessonFindUniqueMock.mockResolvedValue({ id: 10, courseId: 5 })
+    lessonFindUniqueMock.mockResolvedValue({ id: 10, courseId: 5, course: { status: "PUBLISHED" } })
     enrollmentMock.mockResolvedValue({ id: 1 })
     quizMock.mockResolvedValue(null)
   })

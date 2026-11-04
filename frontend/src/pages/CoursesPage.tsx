@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { api } from "../services/api"
 import type { Course, Enrollment } from "../types/course"
+import { isCourseCompleted } from "../utils/progress"
 
 type Filter = "all" | "enrolled" | "available"
 
@@ -15,8 +16,13 @@ function CoursesPage() {
 
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
+  const requestController = useRef<AbortController | null>(null)
+  const enrollmentPending = useRef(false)
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    requestController.current = controller
     const loadCourses = async () => {
       try {
         setLoading(true)
@@ -24,15 +30,17 @@ function CoursesPage() {
 
         const [coursesData, enrollmentsData] =
           await Promise.all([
-            api<{ courses: Course[] }>("/courses"),
+            api<{ courses: Course[] }>("/courses", { signal }),
             api<{ enrollments: Enrollment[] }>(
-              "/enrollments/me"
+              "/enrollments/me", { signal }
             ),
           ])
 
+        if (signal.aborted) return
         setCourses(coursesData.courses)
         setEnrollments(enrollmentsData.enrollments)
       } catch (error) {
+        if (signal.aborted) return
         console.error(error)
 
         setError(
@@ -41,11 +49,12 @@ function CoursesPage() {
             : "Failed to load courses."
         )
       } finally {
-        setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
 
-    loadCourses()
+    void loadCourses()
+    return () => controller.abort()
   }, [])
 
   const enrollmentMap = useMemo(() => {
@@ -75,7 +84,7 @@ function CoursesPage() {
       const matchesFilter =
         filter === "all" ||
         (filter === "enrolled" && enrolled) ||
-        (filter === "available" && !enrolled)
+        (filter === "available" && !enrolled && course.status === "PUBLISHED")
 
       return matchesSearch && matchesFilter
     })
@@ -87,6 +96,9 @@ function CoursesPage() {
   ])
 
   const handleEnroll = async (courseId: number) => {
+    const signal = requestController.current?.signal
+    if (!signal || signal.aborted || enrollmentPending.current) return
+    enrollmentPending.current = true
     try {
       setActionCourseId(courseId)
       setError("")
@@ -97,14 +109,17 @@ function CoursesPage() {
         `/enrollments/courses/${courseId}`,
         {
           method: "POST",
+          signal,
         }
       )
 
+      if (signal.aborted) return
       setEnrollments((current) => [
         data.enrollment,
         ...current,
       ])
     } catch (error) {
+      if (signal.aborted) return
       console.error(error)
 
       setError(
@@ -113,7 +128,10 @@ function CoursesPage() {
           : "Failed to enroll."
       )
     } finally {
-      setActionCourseId(null)
+      if (!signal.aborted) {
+        enrollmentPending.current = false
+        setActionCourseId(null)
+      }
     }
   }
 
@@ -198,6 +216,7 @@ function CoursesPage() {
 
           <input
             type="text"
+            aria-label="Search courses"
             value={search}
             onChange={(event) =>
               setSearch(event.target.value)
@@ -396,12 +415,16 @@ function CoursesPage() {
                   {/* Actions */}
                   <div className="mt-6 flex gap-2">
 
-                    {enrolled ? (
+                    {course.status === "DRAFT" ? (
+                      <Link to={`/courses/${course.id}`} className="flex-1 rounded-lg bg-slate-950 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-indigo-600">
+                        Preview draft
+                      </Link>
+                    ) : enrolled ? (
                       <Link
                         to={`/courses/${course.id}`}
                         className="flex-1 rounded-lg bg-slate-950 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-slate-800"
                       >
-                        {progress === 100
+                        {isCourseCompleted(enrollment?.progress)
                           ? "Review"
                           : "Continue"}
                       </Link>
@@ -411,7 +434,7 @@ function CoursesPage() {
                         onClick={() =>
                           handleEnroll(course.id)
                         }
-                        disabled={actionLoading}
+                        disabled={actionCourseId !== null}
                         className="flex-1 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {actionLoading

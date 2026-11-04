@@ -9,6 +9,10 @@ if (!testEnv.DATABASE_URL || !/_test$/.test(new URL(testEnv.DATABASE_URL).pathna
   throw new Error("Browser tests require backend/.env.test with a database name ending in _test")
 }
 Object.assign(process.env, testEnv, { JWT_SECRET: "browser-test-secret" })
+const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL ?? "msedge"
+if (browserChannel !== "msedge" && browserChannel !== "chromium") {
+  throw new Error("PLAYWRIGHT_BROWSER_CHANNEL must be msedge or chromium")
+}
 
 export default defineConfig({
   testDir: "./e2e",
@@ -22,7 +26,9 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "edge", use: { ...devices["Desktop Edge"], channel: "msedge" } }],
+  projects: [{ name: browserChannel === "msedge" ? "edge" : "chromium", use: {
+    ...devices[browserChannel === "msedge" ? "Desktop Edge" : "Desktop Chrome"], channel: browserChannel,
+  } }],
   webServer: [
     {
       command: "npm run dev",

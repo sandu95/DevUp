@@ -131,7 +131,7 @@ function CourseDetailsPage() {
 
   const handleEnroll = async () => {
     const signal = routeRequest.current?.signal
-    if (!signal || signal.aborted || enrollmentPending.current || enrolled) return
+    if (!signal || signal.aborted || enrollmentPending.current || enrolled || course?.status !== "PUBLISHED") return
     enrollmentPending.current = true
     try {
       setEnrolling(true)
@@ -295,7 +295,9 @@ function CourseDetailsPage() {
                 Status
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
-                {isCourseCompleted
+                {course.status === "DRAFT"
+                  ? "Draft preview"
+                  : isCourseCompleted
                   ? "Completed"
                     : enrolled && !progress
                       ? "Progress unavailable"
@@ -362,7 +364,12 @@ function CourseDetailsPage() {
             </div>
 
             <div className="p-6">
-              {!enrolled ? (
+              {course.status === "DRAFT" ? (
+                <div role="status" className="text-sm leading-6 text-slate-600">
+                  Draft preview. Publish this course before enrolling or recording learning progress.
+                  <Link to={`/admin/courses/${course.id}`} className="mt-4 block font-semibold text-indigo-600">Manage course</Link>
+                </div>
+              ) : !enrolled ? (
                 <>
                   <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
                     Start learning
@@ -530,7 +537,7 @@ function CourseDetailsPage() {
                     </div>
 
                     {/* Action */}
-                    {enrolled ? (
+                    {enrolled || isAdmin ? (
                       <Link
                         to={`/lessons/${lesson.id}`}
                         className={[
@@ -540,7 +547,7 @@ function CourseDetailsPage() {
                             : "bg-slate-950 text-white hover:bg-indigo-600",
                         ].join(" ")}
                       >
-                        {!progress ? "Open" : completed ? "Review" : "Start"}
+                        {!enrolled ? "Preview" : !progress ? "Open" : completed ? "Review" : "Start"}
                       </Link>
                     ) : (
                       <span className="shrink-0 rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-400">

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import type { LoginResponse } from "../types/auth"
 import { api } from "../services/api"
@@ -12,11 +12,21 @@ function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const requestController = useRef<AbortController | null>(null)
+  const submissionPending = useRef(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    requestController.current = controller
+    return () => controller.abort()
+  }, [])
 
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault()
+    const signal = requestController.current?.signal
+    if (!signal || signal.aborted || submissionPending.current) return
+    submissionPending.current = true
 
     setError("")
     setLoading(true)
@@ -24,12 +34,14 @@ function LoginPage() {
     try {
       const data = await api<LoginResponse>("/auth/login", {
         method: "POST",
+        signal,
         body: JSON.stringify({
           email,
           password,
         }),
       })
 
+      if (signal.aborted) return
       login(data.token, data.user)
 
       if (data.user.role === "ADMIN") {
@@ -38,13 +50,17 @@ function LoginPage() {
         navigate("/dashboard", { replace: true })
       }
     } catch (error) {
+      if (signal.aborted) return
       setError(
         error instanceof Error
           ? error.message
           : "Login failed"
       )
     } finally {
-      setLoading(false)
+      if (!signal.aborted) {
+        submissionPending.current = false
+        setLoading(false)
+      }
     }
   }
 

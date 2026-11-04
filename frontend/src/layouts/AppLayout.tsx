@@ -248,6 +248,7 @@ function AppLayout() {
                 <button
                   type="button"
                   onClick={closeMobileMenu}
+                  aria-label="Close navigation"
                   className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
                 >
                   <svg

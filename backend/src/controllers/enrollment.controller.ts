@@ -1,4 +1,6 @@
 import type { Response } from "express"
+import { Prisma } from "../generated/prisma/client.js"
+import { isPositiveInt } from "../lib/validation.js"
 import type { AuthRequest } from "../middleware/auth.middleware.js"
 import { getCourseById } from "../services/course.service.js"
 import {
@@ -21,7 +23,7 @@ export const enroll = async (
 
     const courseId = Number(req.params.courseId)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -29,7 +31,7 @@ export const enroll = async (
 
     const course = await getCourseById(courseId)
 
-    if (!course) {
+    if (!course || course.status !== "PUBLISHED") {
       return res.status(404).json({
         message: "Course not found",
       })
@@ -56,6 +58,12 @@ export const enroll = async (
       enrollment,
     })
   } catch (error) {
+    if (error instanceof Error && error.message === "COURSE_NOT_AVAILABLE") {
+      return res.status(404).json({ message: "Course not found" })
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "Already enrolled in this course" })
+    }
     console.error(error)
 
     return res.status(500).json({
@@ -104,7 +112,7 @@ export const unenroll = async (
 
     const courseId = Number(req.params.courseId)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })

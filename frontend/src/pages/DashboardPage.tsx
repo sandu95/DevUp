@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { api } from "../services/api"
 import type { Enrollment } from "../types/course"
 import CourseCard from "../components/CourseCard"
+import { isCourseCompleted } from "../utils/progress"
 
 function DashboardPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
@@ -10,29 +11,34 @@ function DashboardPage() {
   const [error, setError] = useState("")
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
     const loadDashboard = async () => {
       try {
         const data = await api<{ enrollments: Enrollment[] }>(
-          "/enrollments/me"
+          "/enrollments/me", { signal }
         )
 
+        if (signal.aborted) return
         setEnrollments(data.enrollments)
       } catch (err) {
+        if (signal.aborted) return
         console.error(err)
         setError("Unable to load your courses.")
       } finally {
-        setLoading(false)
+        if (!signal.aborted) setLoading(false)
       }
     }
 
-    loadDashboard()
+    void loadDashboard()
+    return () => controller.abort()
   }, [])
 
   const getProgress = (enrollment: Enrollment) =>
     enrollment.progress?.percentage ?? 0
 
   const completedCourses = enrollments.filter(
-    (enrollment) => getProgress(enrollment) === 100
+    (enrollment) => isCourseCompleted(enrollment.progress)
   ).length
 
   const averageProgress =
@@ -47,7 +53,7 @@ function DashboardPage() {
       : 0
 
   const currentCourse = enrollments.find(
-    (enrollment) => getProgress(enrollment) < 100
+    (enrollment) => !isCourseCompleted(enrollment.progress)
   )
 
   const featuredCourse =
@@ -56,6 +62,7 @@ function DashboardPage() {
   const featuredProgress = featuredCourse
     ? getProgress(featuredCourse)
     : 0
+  const featuredCompleted = isCourseCompleted(featuredCourse?.progress)
 
   return (
     <div className="space-y-12">
@@ -126,12 +133,12 @@ function DashboardPage() {
 
                     <span
                       className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                        featuredProgress === 100
+                        featuredCompleted
                           ? "bg-slate-950 text-white"
                           : "bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {featuredProgress === 100
+                      {featuredCompleted
                         ? "Completed"
                         : "In progress"}
                     </span>
@@ -171,7 +178,7 @@ function DashboardPage() {
                       to={`/courses/${featuredCourse.course.id}`}
                       className="mt-8 inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
                     >
-                      {featuredProgress === 100
+                      {featuredCompleted
                         ? "Review course"
                         : "Continue course"}
 
@@ -192,7 +199,7 @@ function DashboardPage() {
                     </p>
 
                     <p className="mt-2 text-sm leading-5 text-slate-500">
-                      {featuredProgress === 100
+                      {featuredCompleted
                         ? "You completed this course."
                         : "Keep going. You're making progress."}
                     </p>

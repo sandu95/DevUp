@@ -358,7 +358,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
               {lessons.map((lesson) => (
                 <div
                   key={lesson.id}
-                  className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
+                  className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-600">
                     {lesson.position}

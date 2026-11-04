@@ -1,5 +1,6 @@
 
 import type { Response } from "express"
+import { isPositiveInt } from "../lib/validation.js"
 import type { AuthRequest } from "../middleware/auth.middleware.js"
 
 import {
@@ -24,7 +25,7 @@ export const completeLesson = async (
 
     const lessonId = Number(req.params.lessonId)
 
-    if (!Number.isInteger(lessonId) || lessonId <= 0) {
+    if (!isPositiveInt(lessonId)) {
       return res.status(400).json({
         message: "Invalid lesson id",
       })
@@ -108,7 +109,7 @@ export const getMyCourseProgress = async (
 
     const courseId = Number(req.params.courseId)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -123,6 +124,9 @@ export const getMyCourseProgress = async (
     }
 
     if (req.user.role !== "ADMIN") {
+      if (course.status !== "PUBLISHED") {
+        return res.status(404).json({ message: "Course not found" })
+      }
       const enrolled = await isUserEnrolled(
         req.user.userId,
         courseId

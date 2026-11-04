@@ -350,8 +350,8 @@ database.
 The current suite contains:
 
 ``` text
-82 tests
-82 passed
+108 tests
+108 passed
 ```
 
 The tests cover the main backend areas:
@@ -547,27 +547,42 @@ git push
 -   lesson progress;
 -   course progress calculation;
 -   automated backend testing;
--   82 passing automated tests;
+-   draft preview and published-only learner access;
+-   validated publication with actionable errors;
+-   exact course completion counts;
+-   108 passing automated tests;
 -   Git/GitHub versioning.
 
 ### Current verification state
 
 ``` text
-Automated tests: 82/82 passed (13 suites, 2026-11-04)
+Automated tests: 108/108 passed (14 suites, 2026-11-04)
 Backend build: passed
 Frontend build: passed
 Frontend ESLint: passed (0 errors, 0 warnings)
-Browser interaction: 14/14 Playwright tests passed in Edge (headless)
+Browser interaction: 19/19 Playwright tests passed in Edge (headless)
 Viewports: desktop and mobile 390x844
 Frontend E2E TypeScript: passed
 Original lesson/quiz stabilization plan (steps 1-6): completed
+Prisma client generation and test migration deployment: passed
+CI workflow: prepared; not yet executed on GitHub
 ```
+
+The follow-up work adds published-only learning access, admin draft preview, validation before publication, consistent payload/ID checks and conflict responses, exact lesson-count completion, cancellation of requests on navigation, accessible search/navigation controls, and wrapping admin rows on mobile. Publication failures keep the course and accompanying metadata unchanged. Quizless lessons are publishable; existing quizzes require questions, nonblank options and exactly one correct answer per question.
+
+See the root README for reproducible setup and `backend/.env.test.example` for the test configuration template. `.github/workflows/ci.yml` provisions PostgreSQL 16 and runs Node 24 checks plus Chromium browser tests after a future commit/push. Remote CI and local Chromium execution are not verified yet.
 
 ------------------------------------------------------------------------
 
 ## 17. Future development / remaining work
 
 This section should be updated as the project evolves.
+
+Remaining follow-up:
+
+-   commit/push the prepared workflow and inspect its first GitHub Actions run;
+-   verify Chromium results in CI and optionally additional real devices;
+-   extend accessibility/visual review beyond the covered labels, keyboard selection and mobile viewport checks.
 
 Potential areas to document when implemented:
 
@@ -611,7 +626,7 @@ npm test
 
 ### Frontend browser tests
 
-From `frontend`, run `npm run test:e2e`. Tests use installed Microsoft Edge and start isolated servers on ports 3001/5180 against the database in `backend/.env.test`. See `frontend/e2e/README.md` for setup and report instructions. Reports and screenshots are excluded from Git.
+From `frontend`, run `npm run test:e2e`. Tests default to installed Microsoft Edge; `PLAYWRIGHT_BROWSER_CHANNEL=chromium` selects an installed Playwright Chromium. They start isolated servers on ports 3001/5180 against the database in `backend/.env.test`. See `frontend/e2e/README.md` for setup and report instructions. Reports and screenshots are excluded from Git.
 
 ### Specific backend test file
 
@@ -622,8 +637,10 @@ npm test <test-file>.test.ts
 ### Prisma migration deployment
 
 ``` powershell
-npx prisma migrate deploy
+npm run db:deploy
 ```
+
+Use `npm run db:deploy:test` to explicitly load `.env.test` and apply migrations only to a database whose name ends in `_test`. Use `npm run db:generate` to regenerate the client with `prisma7.config.ts` before running builds or browser tests.
 
 ### Git status
 

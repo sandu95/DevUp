@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import { Prisma } from "../generated/prisma/client.js"
-import { isPositiveInt } from "../lib/validation.js"
+import { isNonEmptyString, isPositiveInt } from "../lib/validation.js"
 import {
   createAnswerOption,
   createQuestion,
@@ -29,9 +29,9 @@ import { getCourseById } from "../services/course.service.js"
 
 export const create = async (req: Request, res: Response) => {
   try {
-    const { title, lessonId } = req.body
+    const { title, lessonId } = req.body ?? {}
 
-    if (!title || !Number.isInteger(lessonId)) {
+    if (!isNonEmptyString(title) || !isPositiveInt(lessonId)) {
       return res.status(400).json({
         message: "Title and lessonId are required",
       })
@@ -77,6 +77,9 @@ export const create = async (req: Request, res: Response) => {
       quiz,
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ message: "This lesson already has a quiz" })
+    }
     console.error(error)
 
     return res.status(500).json({
@@ -92,7 +95,7 @@ export const getStudentQuiz = async (
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid quiz id",
       })
@@ -107,6 +110,9 @@ export const getStudentQuiz = async (
     }
 
     if (req.user?.role !== "ADMIN") {
+      if (quiz.lesson.course.status !== "PUBLISHED") {
+        return res.status(404).json({ message: "Quiz not found" })
+      }
       if (!req.user) {
         return res.status(401).json({
           message: "Unauthorized",
@@ -144,7 +150,7 @@ export const getAdminQuiz = async (
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid quiz id",
       })
@@ -179,8 +185,7 @@ export const addQuestion = async (
     const { text, position } = req.body ?? {}
 
     if (
-      !Number.isInteger(quizId) ||
-      quizId <= 0 ||
+      !isPositiveInt(quizId) ||
       typeof text !== "string" || !text.trim() ||
       !isPositiveInt(position)
     ) {
@@ -231,12 +236,11 @@ export const addAnswerOption = async (
 ) => {
   try {
     const questionId = Number(req.params.questionId)
-    const { text, isCorrect } = req.body
+    const { text, isCorrect } = req.body ?? {}
 
     if (
-      !Number.isInteger(questionId) ||
-      questionId <= 0 ||
-      !text ||
+      !isPositiveInt(questionId) ||
+      !isNonEmptyString(text) ||
       typeof isCorrect !== "boolean"
     ) {
       return res.status(400).json({
@@ -301,7 +305,7 @@ export const submit = async (
     const quizId = Number(req.params.id)
     const answers = req.body?.answers
 
-    if (!Number.isInteger(quizId) || quizId <= 0) {
+    if (!isPositiveInt(quizId)) {
       return res.status(400).json({
         message: "Invalid quiz id",
       })
@@ -318,10 +322,8 @@ export const submit = async (
         !answer ||
         typeof answer !== "object" ||
         Array.isArray(answer) ||
-        !Number.isInteger(answer.questionId) ||
-        answer.questionId <= 0 ||
-        !Number.isInteger(answer.answerOptionId) ||
-        answer.answerOptionId <= 0
+        !isPositiveInt(answer.questionId) ||
+        !isPositiveInt(answer.answerOptionId)
     )
 
     if (invalidAnswer) {
@@ -336,6 +338,10 @@ export const submit = async (
       return res.status(404).json({
         message: "Quiz not found",
       })
+    }
+
+    if (quiz.lesson.course.status !== "PUBLISHED") {
+      return res.status(404).json({ message: "Quiz not found" })
     }
 
     // Submitting a quiz requires enrollment for every role.
@@ -418,7 +424,7 @@ export const getMyAttempts = async (
 
     if (
       quizId !== undefined &&
-      (!Number.isInteger(quizId) || quizId <= 0)
+      (!isPositiveInt(quizId))
     ) {
       return res.status(400).json({
         message: "Invalid quiz id",
@@ -455,7 +461,7 @@ export const getByLesson = async (
 
     const lessonId = Number(req.params.lessonId)
 
-    if (!Number.isInteger(lessonId) || lessonId <= 0) {
+    if (!isPositiveInt(lessonId)) {
       return res.status(400).json({
         message: "Invalid lesson id",
       })
@@ -470,6 +476,9 @@ export const getByLesson = async (
     }
 
     if (req.user.role !== "ADMIN") {
+      if (lesson.course.status !== "PUBLISHED") {
+        return res.status(404).json({ message: "Lesson not found" })
+      }
       const enrolled = await isUserEnrolled(
         req.user.userId,
         lesson.courseId
@@ -503,7 +512,7 @@ export const getAdminQuestion = async (
   try {
     const questionId = Number(req.params.questionId)
 
-    if (!Number.isInteger(questionId) || questionId <= 0) {
+    if (!isPositiveInt(questionId)) {
       return res.status(400).json({
         message: "Invalid question id",
       })
@@ -537,7 +546,7 @@ export const updateQuestionController = async (
     const questionId = Number(req.params.questionId)
     const { text, position } = req.body ?? {}
 
-    if (!Number.isInteger(questionId) || questionId <= 0) {
+    if (!isPositiveInt(questionId)) {
       return res.status(400).json({
         message: "Invalid question id",
       })
@@ -596,7 +605,7 @@ export const deleteQuestionController = async (
   try {
     const questionId = Number(req.params.questionId)
 
-    if (!Number.isInteger(questionId) || questionId <= 0) {
+    if (!isPositiveInt(questionId)) {
       return res.status(400).json({
         message: "Invalid question id",
       })
@@ -639,9 +648,9 @@ export const updateAnswerOptionController = async (
 ) => {
   try {
     const optionId = Number(req.params.optionId)
-    const { text, isCorrect } = req.body
+    const { text, isCorrect } = req.body ?? {}
 
-    if (!Number.isInteger(optionId) || optionId <= 0) {
+    if (!isPositiveInt(optionId)) {
       return res.status(400).json({
         message: "Invalid answer option id",
       })
@@ -664,6 +673,13 @@ export const updateAnswerOptionController = async (
       })
     }
 
+    if (
+      (text === undefined && isCorrect === undefined) ||
+      (text !== undefined && !isNonEmptyString(text)) ||
+      (isCorrect !== undefined && typeof isCorrect !== "boolean")
+    ) {
+      return res.status(400).json({ message: "Valid text or isCorrect is required" })
+    }
     const updatedOption = await updateAnswerOption(optionId, {
       text,
       isCorrect,
@@ -698,7 +714,7 @@ export const deleteAnswerOptionController = async (
   try {
     const optionId = Number(req.params.optionId)
 
-    if (!Number.isInteger(optionId) || optionId <= 0) {
+    if (!isPositiveInt(optionId)) {
       return res.status(400).json({
         message: "Invalid answer option id",
       })
@@ -741,15 +757,15 @@ export const updateQuizController = async (
 ) => {
   try {
     const quizId = Number(req.params.id)
-    const { title } = req.body
+    const { title } = req.body ?? {}
 
-    if (!Number.isInteger(quizId) || quizId <= 0) {
+    if (!isPositiveInt(quizId)) {
       return res.status(400).json({
         message: "Invalid quiz id",
       })
     }
 
-    if (!title || typeof title !== "string") {
+    if (!isNonEmptyString(title)) {
       return res.status(400).json({
         message: "Quiz title is required",
       })
@@ -794,7 +810,7 @@ export const deleteQuizController = async (
   try {
     const quizId = Number(req.params.id)
 
-    if (!Number.isInteger(quizId) || quizId <= 0) {
+    if (!isPositiveInt(quizId)) {
       return res.status(400).json({
         message: "Invalid quiz id",
       })

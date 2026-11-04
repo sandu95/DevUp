@@ -1,4 +1,6 @@
 import type { Request, Response } from "express"
+import { Prisma } from "../generated/prisma/client.js"
+import { isNonEmptyString } from "../lib/validation.js"
 import {
   registerUser,
   loginUser,
@@ -6,14 +8,17 @@ import {
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body
+    const { name, email, password } = req.body ?? {}
 
-    if (!name || !email || !password) {
+    if (!isNonEmptyString(name) || !isNonEmptyString(email) || !isNonEmptyString(password)) {
       return res.status(400).json({
         message: "Name, email and password are required",
       })
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: "A valid email address is required" })
+    }
     if (password.length < 6) {
       return res.status(400).json({
         message: "Password must contain at least 6 characters",
@@ -27,7 +32,8 @@ export const register = async (req: Request, res: Response) => {
       user,
     })
   } catch (error) {
-    if (error instanceof Error && error.message === "EMAIL_ALREADY_EXISTS") {
+    if ((error instanceof Error && error.message === "EMAIL_ALREADY_EXISTS") ||
+        (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       return res.status(409).json({
         message: "Email already exists",
       })
@@ -43,9 +49,9 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body
+    const { email, password } = req.body ?? {}
 
-    if (!email || !password) {
+    if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
       return res.status(400).json({
         message: "Email and password are required",
       })

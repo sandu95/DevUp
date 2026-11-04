@@ -1,10 +1,13 @@
 import { prisma } from "../lib/prisma.js"
+import { getCourseProgress } from "./progress.service.js"
 
 export const enrollUserInCourse = async (
   userId: number,
   courseId: number
 ) => {
-  return prisma.enrollment.create({
+  const course = await prisma.course.findUnique({ where: { id: courseId }, select: { status: true } })
+  if (!course || course.status !== "PUBLISHED") throw new Error("COURSE_NOT_AVAILABLE")
+  const enrollment = await prisma.enrollment.create({
     data: {
       userId,
       courseId,
@@ -13,12 +16,15 @@ export const enrollUserInCourse = async (
       course: true,
     },
   })
+  const { completedLessons, totalLessons, percentage } = await getCourseProgress(userId, courseId)
+  return { ...enrollment, progress: { completedLessons, totalLessons, percentage } }
 }
 
 export const getUserEnrollments = async (userId: number) => {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       userId,
+      course: { status: "PUBLISHED" },
     },
     orderBy: {
       enrolledAt: "desc",
@@ -55,7 +61,7 @@ export const getUserEnrollments = async (userId: number) => {
     const percentage =
       totalLessons === 0
         ? 0
-        : Math.round((completedLessons / totalLessons) * 100)
+        : Math.floor((completedLessons / totalLessons) * 100)
 
     const { lessons, ...course } = enrollment.course
 

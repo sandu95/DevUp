@@ -64,6 +64,7 @@ export const getQuizForStudent = async (id: number) => {
         select: {
           id: true,
           courseId: true,
+          course: { select: { status: true } },
         },
       },
       questions: {
@@ -213,6 +214,7 @@ export const submitQuiz = async (
       lesson: {
         select: {
           courseId: true,
+          course: { select: { status: true } },
         },
       },
       questions: {
@@ -223,7 +225,7 @@ export const submitQuiz = async (
     },
   })
 
-  if (!quiz) {
+  if (!quiz || quiz.lesson.course.status !== "PUBLISHED") {
     throw new Error("QUIZ_NOT_FOUND")
   }
 
@@ -334,6 +336,7 @@ export const getUserQuizAttempts = async (
   return prisma.quizAttempt.findMany({
     where: {
       userId,
+      quiz: { lesson: { course: { status: "PUBLISHED" } } },
       ...(quizId ? { quizId } : {}),
     },
     orderBy: {

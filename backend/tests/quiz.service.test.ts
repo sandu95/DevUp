@@ -28,7 +28,7 @@ const question = (id: number) => ({
   ],
 })
 const quiz = (count = 2) => ({
-  id: 20, lessonId: 10, lesson: { courseId: 5 },
+  id: 20, lessonId: 10, lesson: { courseId: 5, course: { status: "PUBLISHED" } },
   questions: Array.from({ length: count }, (_, index) => question(index + 1)),
 })
 const correct = [

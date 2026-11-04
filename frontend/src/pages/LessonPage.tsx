@@ -8,6 +8,7 @@ interface Lesson {
   content: string
   position: number
   courseId: number
+  course: { status: "DRAFT" | "PUBLISHED" }
 }
 
 interface Quiz {
@@ -138,7 +139,7 @@ function LessonPage() {
   }
 
   const handleComplete = async () => {
-    if (!lesson || lesson.id !== lessonId || quizStatus !== "ready" || quiz || completed || completionPending.current) {
+    if (!lesson || lesson.course.status !== "PUBLISHED" || lesson.id !== lessonId || quizStatus !== "ready" || quiz || completed || completionPending.current) {
       return
     }
     const signal = routeRequest.current?.signal
@@ -222,6 +223,12 @@ function LessonPage() {
         Back to course
       </Link>
 
+      {lesson.course.status === "DRAFT" && (
+        <p role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Draft preview. Progress is not recorded.
+        </p>
+      )}
+
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         {/* Main */}
         <main className="min-w-0">
@@ -266,7 +273,7 @@ function LessonPage() {
             </div>
 
             {/* Only lessons confirmed to have no quiz can be completed manually. */}
-            {quizStatus === "ready" && !quiz && (
+            {lesson.course.status === "PUBLISHED" && quizStatus === "ready" && !quiz && (
               <div className="border-t border-slate-100 px-6 py-6 sm:px-9">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -367,7 +374,7 @@ function LessonPage() {
                     to={`/quizzes/${quiz.id}`}
                     className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600"
                   >
-                    {completed ? "Retake quiz" : "Start quiz"}
+                    {lesson.course.status === "DRAFT" ? "Preview quiz" : completed ? "Retake quiz" : "Start quiz"}
                     <span className="ml-2" aria-hidden="true">
                       →
                     </span>

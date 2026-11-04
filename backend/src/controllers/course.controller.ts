@@ -1,4 +1,6 @@
 import type { Request, Response } from "express"
+import { CoursePublicationError } from "../lib/course-publication-error.js"
+import { isNonEmptyString, isOptionalText, isPositiveInt } from "../lib/validation.js"
 import {
   createCourse,
   getCourses,
@@ -13,9 +15,9 @@ import { AuthRequest } from "../middleware/auth.middleware.js"
 
 export const create = async (req: Request, res: Response) => {
   try {
-    const { title, description, imageUrl } = req.body
+    const { title, description, imageUrl } = req.body ?? {}
 
-    if (!title || typeof title !== "string") {
+    if (!isNonEmptyString(title) || !isOptionalText(description) || !isOptionalText(imageUrl)) {
       return res.status(400).json({
         message: "Course title is required",
       })
@@ -44,7 +46,7 @@ export const update = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -69,15 +71,16 @@ export const update = async (req: Request, res: Response) => {
       description,
       imageUrl,
       status,
-    } = req.body
+    } = req.body ?? {}
 
     if (
-      status &&
-      status !== "DRAFT" &&
-      status !== "PUBLISHED"
+      (title === undefined && description === undefined && imageUrl === undefined && status === undefined) ||
+      (title !== undefined && !isNonEmptyString(title)) ||
+      !isOptionalText(description) || !isOptionalText(imageUrl) ||
+      (status !== undefined && status !== "DRAFT" && status !== "PUBLISHED")
     ) {
       return res.status(400).json({
-        message: "Invalid course status",
+        message: "Valid course fields are required",
       })
     }
 
@@ -93,6 +96,15 @@ export const update = async (req: Request, res: Response) => {
       course,
     })
   } catch (error) {
+    if (error instanceof CoursePublicationError) {
+      return res.status(409).json({ message: error.message, issues: error.issues })
+    }
+    if (error instanceof Error && error.message === "COURSE_NOT_FOUND") {
+      return res.status(404).json({ message: "Course not found" })
+    }
+    if (error instanceof Error && error.message === "COURSE_ALREADY_PUBLISHED") {
+      return res.status(409).json({ message: "Published courses cannot be modified" })
+    }
     console.error(error)
 
     return res.status(500).json({
@@ -105,7 +117,7 @@ export const remove = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id)
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPositiveInt(id)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -162,7 +174,7 @@ export const getOne = async (
   try {
     const courseId = Number(req.params.id)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
@@ -198,7 +210,7 @@ export const getPublicCurriculum = async (
   try {
     const courseId = Number(req.params.id)
 
-    if (!Number.isInteger(courseId) || courseId <= 0) {
+    if (!isPositiveInt(courseId)) {
       return res.status(400).json({
         message: "Invalid course id",
       })
