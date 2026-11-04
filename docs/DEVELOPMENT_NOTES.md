@@ -560,17 +560,17 @@ Automated tests: 108/108 passed (14 suites, 2026-11-04)
 Backend build: passed
 Frontend build: passed
 Frontend ESLint: passed (0 errors, 0 warnings)
-Browser interaction: 19/19 Playwright tests passed in Edge (headless)
+Browser interaction: 20/20 Playwright tests passed locally in Chromium and Edge (headless)
 Viewports: desktop and mobile 390x844
 Frontend E2E TypeScript: passed
 Original lesson/quiz stabilization plan (steps 1-6): completed
 Prisma client generation and test migration deployment: passed
-CI workflow: prepared; not yet executed on GitHub
+CI workflow: first run reached browser tests; see Actions for the latest remote result
 ```
 
 The follow-up work adds published-only learning access, admin draft preview, validation before publication, consistent payload/ID checks and conflict responses, exact lesson-count completion, cancellation of requests on navigation, accessible search/navigation controls, and wrapping admin rows on mobile. Publication failures keep the course and accompanying metadata unchanged. Quizless lessons are publishable; existing quizzes require questions, nonblank options and exactly one correct answer per question.
 
-See the root README for reproducible setup and `backend/.env.test.example` for the test configuration template. `.github/workflows/ci.yml` provisions PostgreSQL 16 and runs Node 24 checks plus Chromium browser tests after a future commit/push. Remote CI and local Chromium execution are not verified yet.
+See the root README for reproducible setup and `backend/.env.test.example` for the test configuration template. `.github/workflows/ci.yml` provisions PostgreSQL 16 and runs Node 24 checks plus Chromium browser tests. The first remote run passed backend/frontend checks and 18/19 browser tests; the mobile admin screen overflowed. Admin grids now explicitly use a single shrinkable column below the desktop breakpoint, and lesson actions wrap. A regression with enlarged text reproduced the failure locally before the fix and passes afterwards. Mobile assertions include layout diagnostics. Check GitHub Actions for the latest remote result.
 
 ------------------------------------------------------------------------
 
@@ -580,7 +580,7 @@ This section should be updated as the project evolves.
 
 Remaining follow-up:
 
--   commit/push the prepared workflow and inspect its first GitHub Actions run;
+-   monitor GitHub Actions results after changes;
 -   verify Chromium results in CI and optionally additional real devices;
 -   extend accessibility/visual review beyond the covered labels, keyboard selection and mobile viewport checks.
 

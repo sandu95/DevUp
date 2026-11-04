@@ -63,7 +63,7 @@ Browser tests start isolated servers on ports 3001/5180 against `.env.test`, cre
 
 For Chromium instead of Edge, install it from `frontend` with `npx playwright install chromium`, set `PLAYWRIGHT_BROWSER_CHANNEL=chromium`, then run the browser tests. For example, in PowerShell: `$env:PLAYWRIGHT_BROWSER_CHANNEL = 'chromium'`.
 
-The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pushes and pull requests to `main`. It provisions an ephemeral PostgreSQL database, generates Prisma, applies migrations, runs backend/frontend checks and runs the browser suite in Chromium. Reports and traces are uploaded as CI artifacts. The workflow must be committed and pushed before GitHub can execute it.
+The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pushes and pull requests to `main`. It provisions an ephemeral PostgreSQL database, generates Prisma, applies migrations, runs backend/frontend checks and runs the browser suite in Chromium. Reports and traces are uploaded as CI artifacts. Check the repository's Actions tab for the latest result.
 
 ## Project references
 

@@ -226,7 +226,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                 </div>
             )}
 
-            <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
                 {question.quiz.lesson.course.status === "DRAFT" && (
                     <form
                         onSubmit={handleAddOption}

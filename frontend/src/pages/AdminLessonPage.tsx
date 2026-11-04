@@ -377,7 +377,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                 </form>
             )}
             {quiz && (
-                <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
+                <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
                     {lesson.course.status === "DRAFT" && (
                         <form
                             onSubmit={handleAddQuestion}

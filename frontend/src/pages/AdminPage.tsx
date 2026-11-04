@@ -202,7 +202,7 @@ function AdminPage() {
                 </div>
             )}
 
-            <section className="grid gap-8 xl:grid-cols-[380px_1fr]">
+            <section className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
                 <form
                     onSubmit={handleSubmit}
                     className="h-fit rounded-2xl border border-slate-200 bg-white p-6"

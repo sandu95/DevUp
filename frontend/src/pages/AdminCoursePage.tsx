@@ -232,7 +232,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
         </div>
       )}
 
-      <div className="grid gap-8 xl:grid-cols-[380px_1fr]">
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
         {course.status === "DRAFT" && (
           <form
             onSubmit={handleSubmit}
@@ -374,7 +374,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
                     </p>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {course.status === "DRAFT" && (
                       <button
                         onClick={() => handleEdit(lesson)}

@@ -27,6 +27,21 @@ async function enroll(page: Page, data: BrowserData) {
   await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toBeVisible()
 }
 
+async function expectPageToFitViewport(page: Page) {
+  const layout = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    pageWidth: document.documentElement.scrollWidth,
+    overflowingElements: [...document.querySelectorAll("main *")].flatMap((element) => {
+      const bounds = element.getBoundingClientRect()
+      return bounds.right > window.innerWidth
+        ? [{ tag: element.tagName, id: element.id, width: bounds.width, right: bounds.right }]
+        : []
+    }).slice(0, 8),
+  }))
+  expect(layout.pageWidth, JSON.stringify({ url: page.url(), ...layout }))
+    .toBeLessThanOrEqual(layout.viewportWidth)
+}
+
 test("public catalog, login, enrollment, manual completion, reload and logout", async ({ page, data }, info) => {
   await page.goto(`/catalog/${data.courseId}`)
   await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
@@ -268,6 +283,7 @@ test("admin lesson and question forms handle gaps, conflicts and deletion of edi
   await expect(page.getByText("A question already uses this position in the quiz", { exact: true })).toBeVisible()
   page.once("dialog", (dialog) => dialog.accept())
   await question.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page.getByText("Draft question third", { exact: true })).toHaveCount(0)
   await expect(page.getByLabel("Question", { exact: true })).toHaveValue("")
   await expect(page.getByLabel("Position", { exact: true })).toHaveValue("5")
 })
@@ -290,6 +306,7 @@ test("admin answer authoring allows one correct answer and resets after deleting
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).toBeChecked()
   page.once("dialog", (dialog) => dialog.accept())
   await option.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page.getByText("Browser right answer", { exact: true })).toHaveCount(0)
   await expect(page.getByLabel("Answer text", { exact: true })).toHaveValue("")
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).not.toBeChecked()
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).toBeEnabled()
@@ -401,14 +418,32 @@ test("catalog, dashboard and admin screens remain usable on a mobile viewport", 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/catalog")
   await page.getByRole("searchbox", { name: "Search courses", exact: true }).fill("Browser")
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expectPageToFitViewport(page)
   await login(page, data.admin, "/admin")
   for (const path of ["/dashboard", "/courses", "/admin", `/admin/courses/${data.draftCourseId}`, `/admin/lessons/${data.draftLessonId}`]) {
     await page.goto(path)
     await expect(page.locator("h1")).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), path).toBe(true)
+    await expectPageToFitViewport(page)
     await expect(page.getByRole("button", { name: "Open menu", exact: true })).toBeVisible()
   }
+})
+
+test("admin authoring forms fit a mobile viewport with enlarged text", async ({ page, data }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page, data.admin, "/admin")
+  for (const path of ["/admin", `/admin/courses/${data.draftCourseId}`, `/admin/lessons/${data.draftLessonId}`]) {
+    await page.goto(path)
+    await expect(page.locator("h1")).toBeVisible()
+    // Simulate larger browser text and its effect on intrinsic form-control sizes.
+    await page.addStyleTag({ content: ":root { font-size: 24px; }" })
+    await expectPageToFitViewport(page)
+    await expect(page.getByRole("textbox").first()).toBeEditable()
+  }
+  await page.getByRole("link", { name: "Manage answers", exact: true }).first().click()
+  await expect(page).toHaveURL(/\/admin\/questions\/\d+$/)
+  await expect(page.getByRole("heading", { name: "Answer options", exact: true })).toBeVisible()
+  await expectPageToFitViewport(page)
+  await expect(page.getByRole("textbox").first()).toBeEditable()
 })
 
 test("mobile navigation and quiz layout fit the viewport", async ({ page, data }, info) => {
