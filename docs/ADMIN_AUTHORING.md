@@ -35,4 +35,4 @@ HTTP tests cover authorization, invalid ids, read-only checks, action targets, u
 
 Browser screenshots include publication-checklist.png and delete-dialog-mobile.png in ignored frontend/test-results directories. Admin list actions have separate rows so titles stay readable on narrow screens.
 
-The frontend production build currently warns that its main minified chunk exceeds 500 kB (about 501 kB, about 142 kB gzip). Build succeeds; route-based loading/code splitting is a follow-up, without raising the warning threshold.
+Route-based loading now keeps the initial JavaScript at about 282 kB minified (88 kB gzip), removing the previous >500 kB warning. The lesson quiz editor also separates its state/mutations and controlled forms from the page. See [the performance and dependency review](PERFORMANCE_AND_DEPENDENCIES.md) for measurements, verification and remaining dependency findings.

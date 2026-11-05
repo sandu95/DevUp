@@ -10,6 +10,7 @@ if (!testEnv.DATABASE_URL || !/_test$/.test(new URL(testEnv.DATABASE_URL).pathna
 }
 Object.assign(process.env, testEnv, { JWT_SECRET: "browser-test-secret" })
 const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL ?? "msedge"
+const preview = process.env.PLAYWRIGHT_PREVIEW === "true"
 if (browserChannel !== "msedge" && browserChannel !== "chromium") {
   throw new Error("PLAYWRIGHT_BROWSER_CHANNEL must be msedge or chromium")
 }
@@ -39,7 +40,9 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      command: "npm run dev -- --host localhost --port 5180 --strictPort",
+      command: preview
+        ? "npm run build && npm run preview -- --host localhost --port 5180 --strictPort"
+        : "npm run dev -- --host localhost --port 5180 --strictPort",
       env: { VITE_API_URL: "http://localhost:3001/api" },
       url: "http://localhost:5180",
       reuseExistingServer: false,

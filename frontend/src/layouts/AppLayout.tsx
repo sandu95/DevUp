@@ -1,10 +1,10 @@
 import { useState } from "react"
 import {
   NavLink,
-  Outlet,
   useNavigate,
 } from "react-router-dom"
 import { useAuth } from "../context/useAuth"
+import { RouteContent } from "../components/RouteContent"
 
 function AppLayout() {
   const { user, logout } = useAuth()
@@ -374,7 +374,7 @@ function AppLayout() {
           {/* Page */}
           <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
             <div className="mx-auto w-full max-w-7xl">
-              <Outlet />
+              <RouteContent />
             </div>
           </main>
 

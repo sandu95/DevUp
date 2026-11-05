@@ -50,6 +50,70 @@ async function expectPageToFitViewport(page: Page) {
     .toBeLessThanOrEqual(layout.viewportWidth)
 }
 
+function pageModule(name: string) {
+  return new RegExp(`/(src/pages/${name}\\.tsx|assets/${name}-[^/]+\\.js)(\\?.*)?$`)
+}
+
+test("route modules load on demand and keep navigation visible during loading", async ({ page }) => {
+  const modules: string[] = []
+  page.on("request", (request) => {
+    if (["CatalogPage", "LessonPage", "AdminPage"].some((name) => pageModule(name).test(request.url()))) {
+      modules.push(request.url())
+    }
+  })
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route(pageModule("CatalogPage"), async (route) => {
+    started()
+    await delayed
+    await route.continue()
+  })
+  try {
+    await page.goto("/")
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Learn to build.")
+    expect(modules).toEqual([])
+    await page.getByRole("link", { name: "Courses", exact: true }).click()
+    await requested
+    await expect(page.getByRole("status")).toHaveText("Loading page...")
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible()
+    release()
+    await expect(page.getByLabel("Search courses", { exact: true })).toBeVisible()
+    expect(modules.some((url) => pageModule("CatalogPage").test(url))).toBe(true)
+    expect(modules.some((url) => pageModule("LessonPage").test(url) || pageModule("AdminPage").test(url))).toBe(false)
+  } finally { release() }
+})
+
+test("a failed route module shows recovery controls and reload can retry", async ({ page }) => {
+  await page.route(pageModule("CatalogPage"), (route) => route.abort("failed"))
+  await page.goto("/catalog")
+  await expect(page.getByRole("alert")).toContainText("Unable to load this page")
+  await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible()
+  await page.unroute(pageModule("CatalogPage"))
+  await page.getByRole("button", { name: "Reload page", exact: true }).click()
+  await expect(page.getByLabel("Search courses", { exact: true })).toBeVisible()
+  await expect(page.getByRole("alert")).toHaveCount(0)
+})
+
+test("authorization redirects before downloading protected page modules", async ({ page, data }) => {
+  const protectedModules: string[] = []
+  page.on("request", (request) => {
+    if (["LessonPage", "AdminPage"].some((name) => pageModule(name).test(request.url()))) {
+      protectedModules.push(request.url())
+    }
+  })
+  await page.goto("/lessons/" + data.manualLessonId)
+  await expect(page).toHaveURL("/")
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Learn to build.")
+  expect(protectedModules).toEqual([])
+  await login(page, data.student)
+  await page.goto("/admin")
+  await expect(page).toHaveURL("/dashboard")
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+  expect(protectedModules).toEqual([])
+})
+
 test("admin forms show inline errors before sending invalid writes", async ({ page, data }) => {
   await login(page, data.admin, "/admin")
   const writes: string[] = []

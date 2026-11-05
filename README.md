@@ -70,5 +70,6 @@ The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pus
 - [Current context](docs/DEVUP_CONTEXT.md)
 - [Lesson content and Markdown guide](docs/LESSON_CONTENT.md)
 - [Admin authoring guide](docs/ADMIN_AUTHORING.md)
+- [Performance and dependency review](docs/PERFORMANCE_AND_DEPENDENCIES.md)
 - [Development notes](docs/DEVELOPMENT_NOTES.md)
 - [Agent instructions](AGENTS.md)

@@ -1,20 +1,23 @@
+import { lazy } from "react"
 import { Routes, Route } from "react-router-dom"
-import LoginPage from "./pages/LoginPage"
-import DashboardPage from "./pages/DashboardPage"
-import CoursesPage from "./pages/CoursesPage"
-import CourseDetailsPage from "./pages/CourseDetailsPage"
-import LessonPage from "./pages/LessonPage"
-import QuizPage from "./pages/QuizPage"
-import AdminPage from "./pages/AdminPage"
-import AdminCoursePage from "./pages/AdminCoursePage"
-import AdminLessonPage from "./pages/AdminLessonPage"
-import AdminQuestionPage from "./pages/AdminQuestionPage"
+import { RouteContent } from "./components/RouteContent"
 import ProtectedRoute from "./components/ProtectedRoute"
 import AppLayout from "./layouts/AppLayout"
 import PublicLayout from "./layouts/PublicLayout"
 import HomePage from "./pages/HomePage"
-import CatalogPage from "./pages/CatalogPage"
-import PublicCoursePage from "./pages/PublicCoursePage"
+
+const LoginPage = lazy(() => import("./pages/LoginPage"))
+const DashboardPage = lazy(() => import("./pages/DashboardPage"))
+const CoursesPage = lazy(() => import("./pages/CoursesPage"))
+const CourseDetailsPage = lazy(() => import("./pages/CourseDetailsPage"))
+const LessonPage = lazy(() => import("./pages/LessonPage"))
+const QuizPage = lazy(() => import("./pages/QuizPage"))
+const AdminPage = lazy(() => import("./pages/AdminPage"))
+const AdminCoursePage = lazy(() => import("./pages/AdminCoursePage"))
+const AdminLessonPage = lazy(() => import("./pages/AdminLessonPage"))
+const AdminQuestionPage = lazy(() => import("./pages/AdminQuestionPage"))
+const CatalogPage = lazy(() => import("./pages/CatalogPage"))
+const PublicCoursePage = lazy(() => import("./pages/PublicCoursePage"))
 
 function App() {
   return (
@@ -26,7 +29,9 @@ function App() {
         <Route path="/catalog/:id" element={<PublicCoursePage />} />
       </Route>
 
-      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RouteContent />}>
+        <Route path="/login" element={<LoginPage />} />
+      </Route>
 
       {/* Student / authenticated */}
       <Route element={<ProtectedRoute />}>

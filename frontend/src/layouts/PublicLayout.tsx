@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from "react-router-dom"
+import { Link, NavLink } from "react-router-dom"
+import { RouteContent } from "../components/RouteContent"
 import { useAuth } from "../context/useAuth"
 
 function PublicLayout() {
@@ -72,7 +73,7 @@ function PublicLayout() {
       </header>
 
       <main>
-        <Outlet />
+        <RouteContent />
       </main>
     </div>
   )
