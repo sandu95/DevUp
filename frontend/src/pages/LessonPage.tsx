@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
+import { LessonContent } from "../components/LessonContent"
+import { LessonNavigation } from "../components/LessonNavigation"
+import { Button, ButtonLink } from "../components/ui/Button"
 
 interface Lesson {
   id: number
@@ -36,6 +39,7 @@ function LessonPage() {
   const routeRequest = useRef<AbortController | null>(null)
   const completionPending = useRef(false)
   const quizCheckPending = useRef(false)
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -114,6 +118,12 @@ function LessonPage() {
       controller.abort()
     }
   }, [lessonId])
+
+  useEffect(() => {
+    if (!loading && lesson?.id === lessonId) {
+      headingRef.current?.focus({ preventScroll: true })
+    }
+  }, [lessonId, lesson?.id, loading])
 
   const retryQuizCheck = async () => {
     if (!lesson || lesson.id !== lessonId || quizCheckPending.current) return
@@ -231,7 +241,7 @@ function LessonPage() {
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         {/* Main */}
-        <main className="min-w-0">
+        <div className="min-w-0">
           <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             {/* Header */}
             <header className="border-b border-slate-100 px-6 py-7 sm:px-9 sm:py-8">
@@ -241,7 +251,7 @@ function LessonPage() {
                     Lesson {lesson.position}
                   </p>
 
-                  <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+                  <h1 ref={headingRef} tabIndex={-1} className="mt-2 text-3xl font-bold tracking-tight text-slate-950 focus:outline-none sm:text-4xl">
                     {lesson.title}
                   </h1>
                 </div>
@@ -258,17 +268,7 @@ function LessonPage() {
             {/* Lesson content */}
             <div className="px-6 py-8 sm:px-9 sm:py-10">
               <div className="max-w-3xl">
-                {lesson.content.split("\n").map((paragraph, index) => (
-                  <p
-                    key={index}
-                    className={[
-                      "text-[15px] leading-8 text-slate-700",
-                      index > 0 ? "mt-5" : "",
-                    ].join(" ")}
-                  >
-                    {paragraph || "\u00A0"}
-                  </p>
-                ))}
+                <LessonContent content={lesson.content} />
               </div>
             </div>
 
@@ -290,23 +290,19 @@ function LessonPage() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
+                  <Button
                     onClick={handleComplete}
                     disabled={completed || completing}
-                    className={[
-                      "shrink-0 rounded-xl px-5 py-3 text-sm font-semibold transition-colors",
-                      completed
-                        ? "cursor-default bg-emerald-50 text-emerald-600"
-                        : "bg-slate-950 text-white hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50",
-                    ].join(" ")}
+                    aria-busy={completing}
+                    variant={completed ? "secondary" : "primary"}
+                    className="shrink-0"
                   >
                     {completed
                       ? "Lesson completed"
                       : completing
                         ? "Saving..."
                         : "Mark as completed"}
-                  </button>
+                  </Button>
                 </div>
 
                 {actionError && (
@@ -370,41 +366,27 @@ function LessonPage() {
                     </p>
                   </div>
 
-                  <Link
+                  <ButtonLink
                     to={`/quizzes/${quiz.id}`}
-                    className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-600"
+                    className="shrink-0"
                   >
                     {lesson.course.status === "DRAFT" ? "Preview quiz" : completed ? "Retake quiz" : "Start quiz"}
                     <span className="ml-2" aria-hidden="true">
                       →
                     </span>
-                  </Link>
+                  </ButtonLink>
                 </div>
               </div>
             </section>
           )}
 
-          {/* Next lesson hint */}
-          {completed && quizStatus === "ready" && !quiz && (
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-6 py-5">
-              <p className="text-sm font-semibold text-slate-900">
-                Lesson completed
-              </p>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Return to the course to continue with the next
-                lesson.
-              </p>
-
-              <Link
-                to={`/courses/${lesson.courseId}`}
-                className="mt-4 inline-flex text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
-              >
-                Back to course →
-              </Link>
-            </div>
-          )}
-        </main>
+          <LessonNavigation
+            key={lesson.id}
+            lessonId={lesson.id}
+            courseId={lesson.courseId}
+            draft={lesson.course.status === "DRAFT"}
+          />
+        </div>
 
         {/* Sidebar */}
         <aside className="lg:sticky lg:top-24">

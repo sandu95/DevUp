@@ -350,8 +350,8 @@ database.
 The current suite contains:
 
 ``` text
-108 tests
-108 passed
+112 tests
+112 passed
 ```
 
 The tests cover the main backend areas:
@@ -550,22 +550,22 @@ git push
 -   draft preview and published-only learner access;
 -   validated publication with actionable errors;
 -   exact course completion counts;
--   108 passing automated tests;
+-   112 passing automated tests;
 -   Git/GitHub versioning.
 
 ### Current verification state
 
 ``` text
-Automated tests: 108/108 passed (14 suites, 2026-11-04)
+Automated tests: 112/112 passed (14 suites, 2026-11-05)
 Backend build: passed
-Frontend build: passed
+Frontend build: passed with a main-chunk warning (>500 kB)
 Frontend ESLint: passed (0 errors, 0 warnings)
-Browser interaction: 20/20 Playwright tests passed locally in Chromium and Edge (headless)
+Browser interaction: 31/31 Playwright tests passed locally in Chromium and Edge (headless)
 Viewports: desktop and mobile 390x844
 Frontend E2E TypeScript: passed
 Original lesson/quiz stabilization plan (steps 1-6): completed
 Prisma client generation and test migration deployment: passed
-CI workflow: first run reached browser tests; see Actions for the latest remote result
+CI baseline 97be988: passed, including 20 Chromium tests; later UI batch verified locally
 ```
 
 The follow-up work adds published-only learning access, admin draft preview, validation before publication, consistent payload/ID checks and conflict responses, exact lesson-count completion, cancellation of requests on navigation, accessible search/navigation controls, and wrapping admin rows on mobile. Publication failures keep the course and accompanying metadata unchanged. Quizless lessons are publishable; existing quizzes require questions, nonblank options and exactly one correct answer per question.
@@ -573,6 +573,12 @@ The follow-up work adds published-only learning access, admin draft preview, val
 See the root README for reproducible setup and `backend/.env.test.example` for the test configuration template. `.github/workflows/ci.yml` provisions PostgreSQL 16 and runs Node 24 checks plus Chromium browser tests. The first remote run passed backend/frontend checks and 18/19 browser tests; the mobile admin screen overflowed. Admin grids now explicitly use a single shrinkable column below the desktop breakpoint, and lesson actions wrap. A regression with enlarged text reproduced the failure locally before the fix and passes afterwards. Mobile assertions include layout diagnostics. Check GitHub Actions for the latest remote result.
 
 ------------------------------------------------------------------------
+
+The first UI consistency batch shares buttons/links, labeled fields, badges, progress bars, headers, errors, empty states and loading placeholders across Catalog, Courses and Dashboard. All three pages reuse CourseCard with explicit routes/actions; completion badges still use exact lesson counts. The public catalog omits drafts during admin sessions while Courses retains draft preview. Loading errors no longer also show an empty state. New browser coverage checks search/clear, All/My/Available filters, pending enrollment, accessible progress, and error states; desktop/mobile screenshots were reviewed. This batch adds no dependencies or API changes. It is verified locally with 23 scenarios in both Chromium and Edge; its CI status is separate from the remotely verified baseline.
+
+The lesson-reading batch (2026-11-05) adds a shared react-markdown renderer to lessons and an optional live preview to the draft lesson editor. Content remains a string; no schema or API changes are needed. The learner page supports headings, lists, emphasis, links, quotes and scrollable/focusable code blocks, preserving plain-text line breaks and a single page h1. Raw HTML stays escaped and unsafe URLs remain filtered. Previous/Next navigation follows actual curriculum order, supports gaps and single-lesson courses, retries independently from progress, cancels stale requests and focuses the new title. Navigating never records completion. Five new browser scenarios bring the local suite to 28 per browser. See [the content guide](LESSON_CONTENT.md). npm audit reports 13 pre-existing alerts; installation left existing locked package versions unchanged.
+
+The admin-authoring batch (2026-11-05) reuses publication validation in a protected read-only readiness endpoint and the publication transaction. Checklists link to editors and support retry/cancellation. Forms expose inline errors and write guards. A shared modal replaces delete confirmations, with keyboard cancellation, focus restoration and cascade descriptions. Responsive action rows keep titles readable. Four HTTP scenarios plus strengthened rule checks bring backend coverage to 112 tests; three browser scenarios bring the suite to 31 per engine. See [the admin guide](ADMIN_AUTHORING.md). The frontend build succeeds with a >500 kB main-chunk warning; route-based loading is a follow-up.
 
 ## 17. Future development / remaining work
 

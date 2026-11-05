@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
+import { useConfirmation } from "../hooks/useConfirmation"
+import { useFormValidation } from "../hooks/useFormValidation"
+import { FieldError } from "../components/ui/FieldError"
 
 interface AnswerOption {
     id: number
@@ -43,6 +46,11 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const savePending = useRef(false)
+    const deletionPending = useRef(false)
+    const confirmation = useConfirmation()
+    const validation = useFormValidation()
     const [error, setError] = useState("")
     const routeRequest = useRef<AbortController | null>(null)
 
@@ -77,6 +85,9 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
     }, [questionId, loadQuestion])
 
     const handleEditOption = (option: AnswerOption) => {
+        validation.clear()
+        setError("")
+
         setEditingOptionId(option.id)
         setOptionText(option.text)
         setIsCorrect(option.isCorrect)
@@ -84,14 +95,16 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     const handleDeleteOption = async (optionId: number) => {
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted) return
-        const confirmed = window.confirm(
-            "Are you sure you want to delete this answer option?"
-        )
+        if (!signal || signal.aborted || savePending.current || deletionPending.current) return
+        deletionPending.current = true
+        const confirmed = await confirmation.confirm({ title: "Delete answer option?", description: `Delete "${question?.options.find((option) => option.id === optionId)?.text ?? "this answer option"}"? Submitted answers that reference it will also be removed.`, confirmLabel: "Delete answer option" })
 
-        if (!confirmed) {
+        if (!confirmed || signal.aborted) {
+            deletionPending.current = false
             return
         }
+
+        setDeleting(true)
 
         try {
             setError("")
@@ -103,6 +116,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
             if (signal.aborted) return
             if (editingOptionId === optionId) {
+                validation.clear()
                 setEditingOptionId(null)
                 setOptionText("")
                 setIsCorrect(false)
@@ -115,6 +129,9 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                     ? error.message
                     : "Failed to delete answer option"
             )
+        } finally {
+            deletionPending.current = false
+            if (!signal.aborted) setDeleting(false)
         }
     }
 
@@ -123,7 +140,10 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
     ) => {
         event.preventDefault()
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted || saving) return
+        if (!signal || signal.aborted || saving || savePending.current || deletionPending.current) return
+
+        if (!validation.validate({ "answer-text": optionText.trim() ? "" : "Answer text is required." })) return
+        savePending.current = true
 
         try {
             setSaving(true)
@@ -160,12 +180,13 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
             await loadQuestion(signal)
         } catch (error) {
             if (signal.aborted) return
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to add answer option"
-            )
+            if (error instanceof Error && (error as { status?: number }).status === 409 && error.message.includes("correct answer")) {
+                validation.setFieldError("answer-correct", error.message)
+            } else {
+                setError(error instanceof Error ? error.message : "Failed to save answer option")
+            }
         } finally {
+            savePending.current = false
             if (!signal.aborted) setSaving(false)
         }
     }
@@ -191,7 +212,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     if (!question) {
         return (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 {error || "Question not found"}
             </div>
         )
@@ -199,6 +220,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     return (
         <div className="space-y-8">
+            {confirmation.dialog}
             <div>
                 <Link
                     to={`/admin/lessons/${question.quiz.lessonId}`}
@@ -221,75 +243,82 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
             </div>
 
             {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {error}
                 </div>
             )}
 
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
                 {question.quiz.lesson.course.status === "DRAFT" && (
-                    <form
+                    <form noValidate onChangeCapture={validation.clearOnChange}
                         onSubmit={handleAddOption}
                         className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
                     >
-                        <h2 className="text-lg font-semibold text-slate-900">
-                            {editingOptionId ? "Edit option" : "Add option"}
-                        </h2>
+                        <fieldset disabled={saving || deleting} className="min-w-0">
+                            <h2 className="text-lg font-semibold text-slate-900">
+                                {editingOptionId ? "Edit option" : "Add option"}
+                            </h2>
 
-                        <p className="mt-1 text-sm text-slate-500">
-                            Add one possible answer for this question.
-                        </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Add one possible answer for this question.
+                            </p>
 
-                        <div className="mt-5">
-                            <label htmlFor="answer-text" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                Answer text
-                            </label>
+                            <div className="mt-5">
+                                <label htmlFor="answer-text" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    Answer text
+                                </label>
 
-                            <textarea
-                                id="answer-text"
-                                value={optionText}
-                                onChange={(event) =>
-                                    setOptionText(event.target.value)
-                                }
-                                rows={4}
-                                required
-                                className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                            />
-                        </div>
-
-                        <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4">
-                            <input
-                                type="checkbox"
-                                checked={isCorrect}
-                                disabled={anotherCorrectOptionExists}
-                                onChange={(event) =>
-                                    setIsCorrect(event.target.checked)
-                                }
-                            />
-
-                            <div>
-                                {anotherCorrectOptionExists && (
-                                    <p className="mt-2 text-xs text-slate-400">
-                                        Another answer is already marked as correct.
-                                    </p>
-                                )}
-                                <p className="text-sm font-medium text-slate-700">
-                                    Correct answer
-                                </p>
-
-                                <p className="text-xs text-slate-400">
-                                    Mark this option as correct.
-                                </p>
+                                <textarea
+                                    {...validation.fieldProps("answer-text")}
+                                    id="answer-text"
+                                    value={optionText}
+                                    onChange={(event) =>
+                                        setOptionText(event.target.value)
+                                    }
+                                    rows={4}
+                                    required
+                                    className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                />
+                                <FieldError id="answer-text" message={validation.errors["answer-text"]} />
                             </div>
-                        </label>
 
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                            {saving ? "Saving..." : editingOptionId ? "Save changes" : "Add option"}
-                        </button>
+                            <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4">
+                                <input
+                                    {...validation.fieldProps("answer-correct")}
+                                    id="answer-correct"
+                                    type="checkbox"
+                                    checked={isCorrect}
+                                    disabled={anotherCorrectOptionExists}
+                                    onChange={(event) =>
+                                        setIsCorrect(event.target.checked)
+                                    }
+                                />
+
+                                <div>
+                                    {anotherCorrectOptionExists && (
+                                        <p className="mt-2 text-xs text-slate-400">
+                                            Another answer is already marked as correct.
+                                        </p>
+                                    )}
+                                    <p className="text-sm font-medium text-slate-700">
+                                        Correct answer
+                                    </p>
+
+                                    <p className="text-xs text-slate-400">
+                                        Mark this option as correct.
+                                    </p>
+                                </div>
+                            </label>
+                            <FieldError id="answer-correct" message={validation.errors["answer-correct"]} />
+
+                            <button
+                                type="submit"
+                                disabled={saving || deleting}
+                                className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                {saving ? "Saving..." : editingOptionId ? "Save changes" : "Add option"}
+                            </button>
+                        </fieldset>
                     </form>
                 )}
 
@@ -314,7 +343,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                                 <div
                                     key={option.id}
                                     className={[
-                                        "flex items-center gap-4 rounded-2xl border bg-white p-5",
+                                        "grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4 rounded-2xl border bg-white p-5",
                                         option.isCorrect
                                             ? "border-emerald-300"
                                             : "border-slate-200",
@@ -331,13 +360,13 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                                         {option.isCorrect ? "✓" : "—"}
                                     </div>
 
-                                    <div className="flex-1">
+                                    <div className="min-w-0 break-words">
                                         <p className="text-sm font-medium text-slate-800">
                                             {option.text}
                                         </p>
                                     </div>
 
-                                    <div className="flex items-center gap-2">
+                                    <div className="col-span-2 flex flex-wrap items-center gap-2">
                                         {option.isCorrect && (
                                             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                                                 Correct
@@ -346,14 +375,14 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
                                         {question.quiz.lesson.course.status === "DRAFT" && (
                                             <>
-                                                <button
+                                                <button disabled={saving || deleting}
                                                     onClick={() => handleEditOption(option)}
                                                     className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                                                 >
                                                     Edit
                                                 </button>
 
-                                                <button
+                                                <button disabled={saving || deleting}
                                                     onClick={() => handleDeleteOption(option.id)}
                                                     className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
                                                 >

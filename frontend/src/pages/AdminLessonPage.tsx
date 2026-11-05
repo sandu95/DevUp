@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
+import { useConfirmation } from "../hooks/useConfirmation"
+import { useFormValidation, positionError } from "../hooks/useFormValidation"
+import { FieldError } from "../components/ui/FieldError"
 
 interface Lesson {
     id: number
@@ -52,6 +55,12 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const savePending = useRef(false)
+    const deletionPending = useRef(false)
+    const confirmation = useConfirmation()
+    const quizValidation = useFormValidation()
+    const questionValidation = useFormValidation()
     const [error, setError] = useState("")
     const routeRequest = useRef<AbortController | null>(null)
     const nextQuestionPosition = (quiz?.questions ?? []).reduce(
@@ -97,6 +106,9 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
     }, [lessonId, loadData])
 
     const handleEditQuestion = (question: Question) => {
+        questionValidation.clear()
+        setError("")
+
         setEditingQuestionId(question.id)
         setQuestionText(question.text)
         setQuestionPosition(question.position)
@@ -104,14 +116,16 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
     const handleDeleteQuestion = async (questionId: number) => {
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted) return
-        const confirmed = window.confirm(
-            "Are you sure you want to delete this question?"
-        )
+        if (!signal || signal.aborted || savePending.current || deletionPending.current) return
+        deletionPending.current = true
+        const confirmed = await confirmation.confirm({ title: "Delete question?", description: `Delete "${quiz?.questions.find((question) => question.id === questionId)?.text ?? "this question"}"? Its answer options and submitted answers will also be removed.`, confirmLabel: "Delete question" })
 
-        if (!confirmed) {
+        if (!confirmed || signal.aborted) {
+            deletionPending.current = false
             return
         }
+
+        setDeleting(true)
 
         try {
             setError("")
@@ -123,6 +137,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
             if (signal.aborted) return
             if (editingQuestionId === questionId) {
+                questionValidation.clear()
                 setEditingQuestionId(null)
                 setQuestionText("")
                 setQuestionPosition(null)
@@ -135,6 +150,9 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                     ? error.message
                     : "Failed to delete question"
             )
+        } finally {
+            deletionPending.current = false
+            if (!signal.aborted) setDeleting(false)
         }
     }
 
@@ -143,7 +161,10 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
     ) => {
         event.preventDefault()
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted || saving) return
+        if (!signal || signal.aborted || saving || savePending.current || deletionPending.current) return
+
+        if (!quizValidation.validate({ "quiz-title": quizTitle.trim() ? "" : "A quiz title is required." })) return
+        savePending.current = true
 
         try {
             setSaving(true)
@@ -177,21 +198,24 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                     : "Failed to save quiz"
             )
         } finally {
+            savePending.current = false
             if (!signal.aborted) setSaving(false)
         }
     }
 
     const handleDeleteQuiz = async () => {
         const signal = routeRequest.current?.signal
-        if (!quiz || !signal || signal.aborted || saving) return
+        if (!quiz || !signal || signal.aborted || saving || savePending.current || deletionPending.current) return
 
-        const confirmed = window.confirm(
-            "Are you sure you want to delete this quiz?"
-        )
+        deletionPending.current = true
+        const confirmed = await confirmation.confirm({ title: "Delete quiz?", description: `Delete "${quiz.title}"? All its questions, answer options and attempts will also be removed.`, confirmLabel: "Delete quiz" })
 
-        if (!confirmed) {
+        if (!confirmed || signal.aborted) {
+            deletionPending.current = false
             return
         }
+
+        setDeleting(true)
 
         try {
             setSaving(true)
@@ -203,6 +227,8 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
             })
 
             if (signal.aborted) return
+            quizValidation.clear()
+            questionValidation.clear()
             setQuiz(null)
             setQuizTitle("")
             setEditingQuestionId(null)
@@ -216,6 +242,8 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                     : "Failed to delete quiz"
             )
         } finally {
+            deletionPending.current = false
+            if (!signal.aborted) setDeleting(false)
             if (!signal.aborted) setSaving(false)
         }
     }
@@ -226,7 +254,13 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
         event.preventDefault()
 
         const signal = routeRequest.current?.signal
-        if (!quiz || !signal || signal.aborted || saving) return
+        if (!quiz || !signal || signal.aborted || saving || savePending.current || deletionPending.current) return
+
+        if (!questionValidation.validate({
+            "question-text": questionText.trim() ? "" : "Question text is required.",
+            "question-position": positionError(questionPosition ?? nextQuestionPosition),
+        })) return
+        savePending.current = true
 
         try {
             setSaving(true)
@@ -261,12 +295,13 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
         } catch (error) {
             if (signal.aborted) return
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to add question"
-            )
+            if (error instanceof Error && (error as { status?: number }).status === 409 && error.message.includes("position")) {
+                questionValidation.setFieldError("question-position", error.message)
+            } else {
+                setError(error instanceof Error ? error.message : "Failed to save question")
+            }
         } finally {
+            savePending.current = false
             if (!signal.aborted) setSaving(false)
         }
     }
@@ -285,7 +320,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
     if (!lesson) {
         return (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 {error || "Lesson not found"}
             </div>
         )
@@ -293,6 +328,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
     return (
         <div className="space-y-8">
+            {confirmation.dialog}
             <div>
                 <Link
                     to={`/admin/courses/${lesson.courseId}`}
@@ -315,153 +351,165 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
             </div>
 
             {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {error}
                 </div>
             )}
 
             {lesson.course.status === "DRAFT" && (
-                <form
+                <form noValidate onChangeCapture={quizValidation.clearOnChange}
                     onSubmit={handleCreateQuiz}
                     className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6"
                 >
-                    <h2 className="text-lg font-semibold text-slate-900">
-                        {quiz ? "Edit quiz" : "Create quiz"}
-                    </h2>
+                    <fieldset disabled={saving || deleting} className="min-w-0">
+                        <h2 className="text-lg font-semibold text-slate-900">
+                            {quiz ? "Edit quiz" : "Create quiz"}
+                        </h2>
 
-                    <p className="mt-1 text-sm text-slate-500">
-                        {quiz
-                            ? "Update the quiz title."
-                            : "Create a quiz for this lesson."}
-                    </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {quiz
+                                ? "Update the quiz title."
+                                : "Create a quiz for this lesson."}
+                        </p>
 
-                    <div className="mt-5">
-                        <label htmlFor="quiz-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                            Quiz title
-                        </label>
+                        <div className="mt-5">
+                            <label htmlFor="quiz-title" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                Quiz title
+                            </label>
 
-                        <input
-                            id="quiz-title"
-                            value={quizTitle}
-                            onChange={(event) =>
-                                setQuizTitle(event.target.value)
-                            }
-                            required
-                            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
-                    </div>
+                            <input
+                                {...quizValidation.fieldProps("quiz-title")}
+                                id="quiz-title"
+                                value={quizTitle}
+                                onChange={(event) =>
+                                    setQuizTitle(event.target.value)
+                                }
+                                required
+                                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            />
+                            <FieldError id="quiz-title" message={quizValidation.errors["quiz-title"]} />
+                        </div>
 
-                    <div className="mt-5 flex gap-3">
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                            {saving
-                                ? "Saving..."
-                                : quiz
-                                    ? "Save changes"
-                                    : "Create quiz"}
-                        </button>
-
-                        {quiz && (
+                        <div className="mt-5 flex gap-3">
                             <button
-                                type="button"
-                                onClick={handleDeleteQuiz}
-                                className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                type="submit"
+                                disabled={saving || deleting}
+                                className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                             >
-                                Delete quiz
+                                {saving
+                                    ? "Saving..."
+                                    : quiz
+                                        ? "Save changes"
+                                        : "Create quiz"}
                             </button>
-                        )}
-                    </div>
+
+                            {quiz && (
+                                <button disabled={saving || deleting}
+                                    type="button"
+                                    onClick={handleDeleteQuiz}
+                                    className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                >
+                                    Delete quiz
+                                </button>
+                            )}
+                        </div>
+                    </fieldset>
                 </form>
             )}
             {quiz && (
                 <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
                     {lesson.course.status === "DRAFT" && (
-                        <form
+                        <form noValidate onChangeCapture={questionValidation.clearOnChange}
                             onSubmit={handleAddQuestion}
                             className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
                         >
-                            <h2 className="text-lg font-semibold text-slate-900">
-                                {editingQuestionId
-                                    ? "Edit question"
-                                    : "Add question"}
-                            </h2>
+                            <fieldset disabled={saving || deleting} className="min-w-0">
+                                <h2 className="text-lg font-semibold text-slate-900">
+                                    {editingQuestionId
+                                        ? "Edit question"
+                                        : "Add question"}
+                                </h2>
 
-                            <p className="mt-1 text-sm text-slate-500">
-                                {editingQuestionId
-                                    ? "Update the selected question."
-                                    : "Add a new question to this quiz."}
-                            </p>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {editingQuestionId
+                                        ? "Update the selected question."
+                                        : "Add a new question to this quiz."}
+                                </p>
 
-                            <div className="mt-5 space-y-5">
-                                <div>
-                                    <label htmlFor="question-text" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                        Question
-                                    </label>
+                                <div className="mt-5 space-y-5">
+                                    <div>
+                                        <label htmlFor="question-text" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                            Question
+                                        </label>
 
-                                    <textarea
-                                        id="question-text"
-                                        value={questionText}
-                                        onChange={(event) =>
-                                            setQuestionText(event.target.value)
-                                        }
-                                        rows={4}
-                                        required
-                                        className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                                    />
+                                        <textarea
+                                            {...questionValidation.fieldProps("question-text")}
+                                            id="question-text"
+                                            value={questionText}
+                                            onChange={(event) =>
+                                                setQuestionText(event.target.value)
+                                            }
+                                            rows={4}
+                                            required
+                                            className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                        />
+                                        <FieldError id="question-text" message={questionValidation.errors["question-text"]} />
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="question-position" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                            Position
+                                        </label>
+
+                                        <input
+                                            {...questionValidation.fieldProps("question-position")}
+                                            id="question-position"
+                                            type="number"
+                                            min="1"
+                                            max="2147483647"
+                                            value={questionPosition ?? nextQuestionPosition}
+                                            onChange={(event) =>
+                                                setQuestionPosition(
+                                                    Number(event.target.value)
+                                                )
+                                            }
+                                            required
+                                            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
+                                        />
+                                        <FieldError id="question-position" message={questionValidation.errors["question-position"]} />
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <label htmlFor="question-position" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                        Position
-                                    </label>
-
-                                    <input
-                                        id="question-position"
-                                        type="number"
-                                        min="1"
-                                        max="2147483647"
-                                        value={questionPosition ?? nextQuestionPosition}
-                                        onChange={(event) =>
-                                            setQuestionPosition(
-                                                Number(event.target.value)
-                                            )
-                                        }
-                                        required
-                                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-5 flex gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={saving}
-                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                                >
-                                    {saving
-                                        ? "Saving..."
-                                        : editingQuestionId
-                                            ? "Save changes"
-                                            : "Add question"}
-                                </button>
-
-                                {editingQuestionId && (
+                                <div className="mt-5 flex gap-3">
                                     <button
-                                        type="button"
-                                        onClick={() => {
-                                            setEditingQuestionId(null)
-                                            setQuestionText("")
-                                            setQuestionPosition(null)
-                                        }}
-                                        className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                        type="submit"
+                                        disabled={saving || deleting}
+                                        className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                                     >
-                                        Cancel
+                                        {saving
+                                            ? "Saving..."
+                                            : editingQuestionId
+                                                ? "Save changes"
+                                                : "Add question"}
                                     </button>
-                                )}
-                            </div>
+
+                                    {editingQuestionId && (
+                                        <button disabled={saving || deleting}
+                                            type="button"
+                                            onClick={() => {
+                                                questionValidation.clear()
+                                                setError("")
+                                                setEditingQuestionId(null)
+                                                setQuestionText("")
+                                                setQuestionPosition(null)
+                                            }}
+                                            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                </div>
+                            </fieldset>
                         </form>
                     )}
 
@@ -511,7 +559,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
                                                     {lesson.course.status === "DRAFT" && (
                                                         <>
-                                                            <button
+                                                            <button disabled={saving || deleting}
                                                                 type="button"
                                                                 onClick={() => handleEditQuestion(question)}
                                                                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
@@ -519,7 +567,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                                                                 Edit
                                                             </button>
 
-                                                            <button
+                                                            <button disabled={saving || deleting}
                                                                 type="button"
                                                                 onClick={() =>
                                                                     handleDeleteQuestion(question.id)

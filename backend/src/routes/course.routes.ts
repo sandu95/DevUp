@@ -6,6 +6,7 @@ import {
   update,
   remove,
   getPublicCurriculum,
+  getPublicationCheck,
 } from "../controllers/course.controller.js"
 import {
   authenticate,
@@ -19,6 +20,13 @@ router.get(
   "/",
   optionalAuthenticate,
   getAll
+)
+
+router.get(
+  "/:id/publication-check",
+  authenticate,
+  authorize("ADMIN"),
+  getPublicationCheck
 )
 
 router.get(

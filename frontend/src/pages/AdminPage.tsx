@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { api } from "../services/api"
+import { useConfirmation } from "../hooks/useConfirmation"
+import { useFormValidation } from "../hooks/useFormValidation"
+import { FieldError } from "../components/ui/FieldError"
 import type { Course } from "../types/course"
 import { Link } from "react-router-dom"
+import { PublicationChecklist } from "../components/PublicationChecklist"
 
 interface CourseForm {
     title: string
@@ -24,6 +28,11 @@ function AdminPage() {
 
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const savePending = useRef(false)
+    const deletionPending = useRef(false)
+    const confirmation = useConfirmation()
+    const validation = useFormValidation()
     const [error, setError] = useState("")
     const routeRequest = useRef<AbortController | null>(null)
 
@@ -66,11 +75,16 @@ function AdminPage() {
     }
 
     const resetForm = () => {
+        validation.clear()
+        setError("")
         setForm(emptyForm)
         setEditingId(null)
     }
 
     const handleEdit = (course: Course) => {
+        validation.clear()
+        setError("")
+
         setEditingId(course.id)
 
         setForm({
@@ -91,7 +105,10 @@ function AdminPage() {
     ) => {
         event.preventDefault()
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted || saving) return
+        if (!signal || signal.aborted || saving || savePending.current || deletionPending.current) return
+
+        if (!validation.validate({ "course-title": form.title.trim() ? "" : "A course title is required." })) return
+        savePending.current = true
 
         try {
             setSaving(true)
@@ -133,20 +150,23 @@ function AdminPage() {
                     : "Failed to save course"
             )
         } finally {
+            savePending.current = false
             if (!signal.aborted) setSaving(false)
         }
     }
 
     const handleDelete = async (course: Course) => {
         const signal = routeRequest.current?.signal
-        if (!signal || signal.aborted) return
-        const confirmed = window.confirm(
-            `Are you sure you want to permanently delete "${course.title}"?\n\nThis will also delete all lessons, quizzes, enrollments, progress and quiz attempts associated with this course.`
-        )
+        if (!signal || signal.aborted || savePending.current || deletionPending.current) return
+        deletionPending.current = true
+        const confirmed = await confirmation.confirm({ title: "Delete course?", description: `Delete "${course.title}"? This permanently removes all its lessons, quizzes, enrollments, progress and quiz attempts.`, confirmLabel: "Delete course" })
 
-        if (!confirmed) {
+        if (!confirmed || signal.aborted) {
+            deletionPending.current = false
             return
         }
+
+        setDeleting(true)
 
         try {
             setError("")
@@ -169,6 +189,9 @@ function AdminPage() {
                     ? error.message
                     : "Failed to delete course"
             )
+        } finally {
+            deletionPending.current = false
+            if (!signal.aborted) setDeleting(false)
         }
     }
 
@@ -182,6 +205,7 @@ function AdminPage() {
 
     return (
         <div className="space-y-8">
+            {confirmation.dialog}
             <div>
                 <p className="text-sm font-medium text-violet-600">
                     Administration
@@ -203,116 +227,121 @@ function AdminPage() {
             )}
 
             <section className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
-                <form
+                <form noValidate onChangeCapture={validation.clearOnChange}
                     onSubmit={handleSubmit}
                     className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
                 >
-                    <div className="mb-6">
-                        <h2 className="text-lg font-semibold text-slate-900">
-                            {editingId
-                                ? "Edit course"
-                                : "Create course"}
-                        </h2>
+                    <fieldset disabled={saving || deleting} className="min-w-0">
+                        <div className="mb-6">
+                            <h2 className="text-lg font-semibold text-slate-900">
+                                {editingId
+                                    ? "Edit course"
+                                    : "Create course"}
+                            </h2>
 
-                        <p className="mt-1 text-sm text-slate-500">
-                            {editingId
-                                ? "Update the selected course."
-                                : "Add a new course to the platform."}
-                        </p>
-                    </div>
-
-                    <div className="space-y-5">
-                        <div>
-                            <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                Title
-                            </label>
-
-                            <input
-                                id="course-title"
-                                name="title"
-                                value={form.title}
-                                onChange={handleChange}
-                                required
-                                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                            />
+                            <p className="mt-1 text-sm text-slate-500">
+                                {editingId
+                                    ? "Update the selected course."
+                                    : "Add a new course to the platform."}
+                            </p>
                         </div>
 
-                        <div>
-                            <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                Description
-                            </label>
-
-                            <textarea
-                                id="course-description"
-                                name="description"
-                                value={form.description}
-                                onChange={handleChange}
-                                rows={5}
-                                className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="course-image" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                Image URL
-                            </label>
-
-                            <input
-                                id="course-image"
-                                name="imageUrl"
-                                value={form.imageUrl}
-                                onChange={handleChange}
-                                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                            />
-                        </div>
-
-                        {editingId && (
+                        <div className="space-y-5">
                             <div>
-                                <label htmlFor="course-status" className="mb-1.5 block text-sm font-medium text-slate-700">
-                                    Status
+                                <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    Title
                                 </label>
 
-                                <select
-                                    id="course-status"
-                                    name="status"
-                                    value={form.status}
+                                <input
+                                    {...validation.fieldProps("course-title")}
+                                    id="course-title"
+                                    name="title"
+                                    value={form.title}
                                     onChange={handleChange}
-                                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
-                                >
-                                    <option value="DRAFT">
-                                        Draft
-                                    </option>
-                                    <option value="PUBLISHED">
-                                        Published
-                                    </option>
-                                </select>
+                                    required
+                                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                />
+                                <FieldError id="course-title" message={validation.errors["course-title"]} />
                             </div>
-                        )}
-                    </div>
 
-                    <div className="mt-6 flex gap-3">
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                            {saving
-                                ? "Saving..."
-                                : editingId
-                                    ? "Save changes"
-                                    : "Create course"}
-                        </button>
+                            <div>
+                                <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    Description
+                                </label>
 
-                        {editingId && (
+                                <textarea
+                                    id="course-description"
+                                    name="description"
+                                    value={form.description}
+                                    onChange={handleChange}
+                                    rows={5}
+                                    className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                />
+                            </div>
+
+                            <div>
+                                <label htmlFor="course-image" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                    Image URL
+                                </label>
+
+                                <input
+                                    id="course-image"
+                                    name="imageUrl"
+                                    value={form.imageUrl}
+                                    onChange={handleChange}
+                                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                />
+                            </div>
+
+                            {editingId && (
+                                <div>
+                                    <label htmlFor="course-status" className="mb-1.5 block text-sm font-medium text-slate-700">
+                                        Status
+                                    </label>
+
+                                    <select
+                                        id="course-status"
+                                        name="status"
+                                        value={form.status}
+                                        onChange={handleChange}
+                                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
+                                    >
+                                        <option value="DRAFT">
+                                            Draft
+                                        </option>
+                                        <option value="PUBLISHED">
+                                            Published
+                                        </option>
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        {editingId && form.status === "PUBLISHED" && <PublicationChecklist key={editingId} courseId={editingId} />}
+                        <div className="mt-6 flex gap-3">
                             <button
-                                type="button"
-                                onClick={resetForm}
-                                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                type="submit"
+                                disabled={saving || deleting}
+                                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
                             >
-                                Cancel
+                                {saving
+                                    ? "Saving..."
+                                    : editingId
+                                        ? "Save changes"
+                                        : "Create course"}
                             </button>
-                        )}
-                    </div>
+
+                            {editingId && (
+                                <button disabled={saving || deleting}
+                                    type="button"
+                                    onClick={resetForm}
+                                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                    Cancel
+                                </button>
+                            )}
+                        </div>
+                    </fieldset>
                 </form>
 
                 <div>
@@ -355,8 +384,8 @@ function AdminPage() {
                                         </div>
 
                                         <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="truncate font-semibold text-slate-900">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="break-words font-semibold text-slate-900">
                                                     {course.title}
                                                 </h3>
 
@@ -378,8 +407,9 @@ function AdminPage() {
                                             </p>
                                         </div>
 
+                                        <div className="flex w-full flex-wrap gap-2">
                                         {course.status === "DRAFT" && (
-                                            <button
+                                            <button disabled={saving || deleting}
                                                 onClick={() => handleEdit(course)}
                                                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                                             >
@@ -387,7 +417,7 @@ function AdminPage() {
                                             </button>
                                         )}
 
-                                        <button
+                                        <button disabled={saving || deleting}
                                             onClick={() => handleDelete(course)}
                                             className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
                                         >
@@ -400,6 +430,7 @@ function AdminPage() {
                                         >
                                             Manage
                                         </Link>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

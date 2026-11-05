@@ -1,4 +1,4 @@
-import { test as base, expect, type Page } from "@playwright/test"
+import { test as base, expect, type Page, type Request } from "@playwright/test"
 import { createBrowserData, prisma } from "../../backend/tests/browser.fixtures.ts"
 
 type BrowserData = Awaited<ReturnType<typeof createBrowserData>>
@@ -27,6 +27,14 @@ async function enroll(page: Page, data: BrowserData) {
   await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toBeVisible()
 }
 
+async function confirmDeletion(page: Page, label: string) {
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused()
+  await dialog.getByRole("button", { name: label, exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+}
+
 async function expectPageToFitViewport(page: Page) {
   const layout = await page.evaluate(() => ({
     viewportWidth: window.innerWidth,
@@ -41,6 +49,358 @@ async function expectPageToFitViewport(page: Page) {
   expect(layout.pageWidth, JSON.stringify({ url: page.url(), ...layout }))
     .toBeLessThanOrEqual(layout.viewportWidth)
 }
+
+test("admin forms show inline errors before sending invalid writes", async ({ page, data }) => {
+  await login(page, data.admin, "/admin")
+  const writes: string[] = []
+  page.on("request", (request) => {
+    if (["POST", "PATCH", "DELETE"].includes(request.method())) writes.push(request.url())
+  })
+  await page.getByLabel("Title", { exact: true }).fill("   ")
+  await page.getByRole("button", { name: "Create course", exact: true }).click()
+  await expect(page.getByLabel("Title", { exact: true })).toBeFocused()
+  await expect(page.getByLabel("Title", { exact: true })).toHaveAttribute("aria-invalid", "true")
+  await expect(page.getByText("A course title is required.", { exact: true })).toBeVisible()
+  await page.getByLabel("Title", { exact: true }).fill("Valid title")
+  await expect(page.getByText("A course title is required.", { exact: true })).toHaveCount(0)
+
+  await page.goto("/admin/courses/" + data.draftCourseId)
+  await page.getByLabel("Title", { exact: true }).fill(" ")
+  await page.getByLabel("Content", { exact: true }).fill(" ")
+  await page.getByLabel("Position", { exact: true }).fill("0")
+  await page.getByRole("button", { name: "Create lesson", exact: true }).click()
+  await expect(page.getByLabel("Title", { exact: true })).toBeFocused()
+  await expect(page.getByText("Lesson content is required.", { exact: true })).toBeVisible()
+  await expect(page.getByLabel("Position", { exact: true })).toHaveAttribute("aria-invalid", "true")
+  await page.getByLabel("Title", { exact: true }).fill("Valid lesson")
+  await expect(page.getByText("A lesson title is required.", { exact: true })).toHaveCount(0)
+
+  await page.goto("/admin/lessons/" + data.draftLessonId)
+  await page.getByLabel("Quiz title", { exact: true }).fill(" ")
+  await page.getByRole("button", { name: "Save changes", exact: true }).click()
+  await expect(page.getByLabel("Quiz title", { exact: true })).toBeFocused()
+  await expect(page.getByText("A quiz title is required.", { exact: true })).toBeVisible()
+  await page.getByLabel("Question", { exact: true }).fill(" ")
+  await page.getByLabel("Position", { exact: true }).fill("2147483648")
+  await page.getByRole("button", { name: "Add question", exact: true }).click()
+  await expect(page.getByLabel("Question", { exact: true })).toBeFocused()
+  await expect(page.getByLabel("Position", { exact: true })).toHaveAttribute("aria-invalid", "true")
+
+  await page.getByRole("link", { name: "Manage answers", exact: true }).first().click()
+  await page.getByLabel("Answer text", { exact: true }).fill(" ")
+  await page.getByRole("button", { name: "Add option", exact: true }).click()
+  await expect(page.getByLabel("Answer text", { exact: true })).toBeFocused()
+  await expect(page.getByText("Answer text is required.", { exact: true })).toBeVisible()
+  expect(writes).toEqual([])
+})
+
+test("delete dialogs support keyboard cancellation, retry and duplicate prevention", async ({ page, data }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page, data.admin, "/admin")
+  await page.goto("/admin/courses/" + data.draftCourseId)
+  const third = page.getByRole("heading", { name: "Draft Third", exact: true }).locator("..").locator("..")
+  const trigger = third.getByRole("button", { name: "Delete", exact: true })
+  const lesson = await prisma.lesson.findFirstOrThrow({ where: { courseId: data.draftCourseId, position: 3 } })
+  let attempts = 0
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route("**/api/lessons/" + lesson.id, async (route) => {
+    attempts++
+    if (attempts === 1) {
+      await route.fulfill({ status: 503, json: { message: "Delete unavailable" } })
+      return
+    }
+    started()
+    await delayed
+    await route.continue()
+  })
+  try {
+    await trigger.click()
+    const dialog = page.getByRole("dialog", { name: "Delete lesson?", exact: true })
+    await expect(dialog).toContainText("Draft Third")
+    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused()
+    await page.screenshot({ path: info.outputPath("delete-dialog-mobile.png"), animations: "disabled" })
+    await page.keyboard.press("Tab")
+    await expect(dialog.getByRole("button", { name: "Delete lesson", exact: true })).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(dialog).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    expect(attempts).toBe(0)
+    await trigger.click()
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(trigger).toBeFocused()
+    expect(attempts).toBe(0)
+
+    await trigger.click()
+    await confirmDeletion(page, "Delete lesson")
+    await expect(page.getByRole("alert")).toContainText("Delete unavailable")
+    await expect(trigger).toBeEnabled()
+    expect(await prisma.lesson.count({ where: { id: lesson.id } })).toBe(1)
+
+    await trigger.click()
+    await confirmDeletion(page, "Delete lesson")
+    await requested
+    await expect(trigger).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Create lesson", exact: true })).toBeDisabled()
+    await trigger.dispatchEvent("click")
+    expect(attempts).toBe(2)
+    release()
+    await expect(page.getByRole("heading", { name: "Draft Third", exact: true })).toHaveCount(0)
+    expect(await prisma.lesson.count({ where: { id: lesson.id } })).toBe(0)
+
+    await page.goto("/admin")
+    const course = page.getByRole("heading", { name: "Browser Draft Course", exact: true }).locator("..").locator("..").locator("..")
+    await course.getByRole("button", { name: "Delete", exact: true }).click()
+    await expect(page.getByRole("dialog")).toContainText("enrollments, progress and quiz attempts")
+    await confirmDeletion(page, "Delete course")
+    await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toHaveCount(0)
+    expect(await prisma.course.count({ where: { id: data.draftCourseId } })).toBe(0)
+  } finally { release() }
+})
+
+test("publication checklist retries and cancels stale checks when publication is deselected", async ({ page, data }, info) => {
+  await login(page, data.admin, "/admin")
+  const endpoint = "**/api/courses/" + data.draftCourseId + "/publication-check"
+  await page.route(endpoint, (route) => route.fulfill({ status: 503, json: { message: "Check unavailable" } }))
+  const row = page.getByRole("heading", { name: "Browser Draft Course", exact: true }).locator("..").locator("..").locator("..")
+  await row.getByRole("button", { name: "Edit", exact: true }).click()
+  await page.getByLabel("Status", { exact: true }).selectOption("PUBLISHED")
+  const checklist = page.getByRole("region", { name: "Publication checklist", exact: true })
+  await expect(checklist.getByRole("alert")).toContainText("Check unavailable")
+  await page.unroute(endpoint)
+  await checklist.getByRole("button", { name: "Retry checks", exact: true }).click()
+  await expect(checklist).toContainText("must have answer options")
+  await expect(checklist.getByRole("link", { name: "Review answers", exact: true }).first()).toHaveAttribute("href", new RegExp("/admin/questions/[0-9]+$"))
+  await page.evaluate(() => window.scrollTo({ top: 0 }))
+  await page.screenshot({ path: info.outputPath("publication-checklist.png"), fullPage: true, animations: "disabled" })
+
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  const held = new Set<Request>()
+  const finished: Promise<void>[] = []
+  let hold = true
+  await page.route(endpoint, async (route) => {
+    if (!hold) { await route.continue(); return }
+    const request = route.request()
+    held.add(request)
+    let settled!: () => void
+    finished.push(new Promise<void>((resolve) => { settled = resolve }))
+    started()
+    await delayed
+    try {
+      await route.fulfill({ json: { check: { courseId: data.draftCourseId, status: "DRAFT", ready: true, issues: [] } } })
+    } catch (error) {
+      if (!request.failure()?.errorText.includes("ERR_ABORTED")) throw error
+    } finally { settled() }
+  })
+  try {
+    await checklist.getByRole("button", { name: "Refresh checks", exact: true }).click()
+    await requested
+    await expect(checklist).toContainText("Checking saved content...")
+    await page.getByLabel("Status", { exact: true }).selectOption("DRAFT")
+    await expect(checklist).toHaveCount(0)
+    await expect.poll(() => held.size > 0 && [...held].every((request) => request.failure()?.errorText.includes("ERR_ABORTED"))).toBe(true)
+    hold = false
+    release()
+    await Promise.all(finished)
+    await page.getByLabel("Status", { exact: true }).selectOption("PUBLISHED")
+    await expect(checklist).toContainText("must have answer options")
+    await expect(checklist.getByText("Saved content is ready to publish.", { exact: true })).toHaveCount(0)
+    expect((await prisma.course.findUnique({ where: { id: data.draftCourseId } }))?.status).toBe("DRAFT")
+  } finally {
+    hold = false
+    release()
+    await Promise.all(finished)
+  }
+})
+
+test("lesson Markdown stays readable and keeps HTML and unsafe links inert", async ({ page, data }, info) => {
+  const content = [
+    "# Working with conditions",
+    "",
+    "Legacy line one",
+    "Legacy line two",
+    "",
+    "Use **clear names** and `const` for values.",
+    "",
+    "## Checklist",
+    "",
+    "- Read the value",
+    "- Handle missing values",
+    "  - Keep a fallback",
+    "",
+    "1. Create a variable",
+    "2. Print its value",
+    "",
+    "> Test one thing at a time.",
+    "",
+    "```typescript",
+    "const markup = '<button>not HTML</button>';",
+    "console.log('" + "long-example-".repeat(20) + "', markup);",
+    "```",
+    "",
+    "[Reference](https://example.com/docs)",
+    "",
+    "[Unsafe link](javascript:alert%281%29)",
+    "",
+    "<script>globalThis.__lessonXss = true</script>",
+    "<img src=x onerror='globalThis.__lessonXss = true'>",
+  ].join("\n")
+  await prisma.lesson.update({ where: { id: data.manualLessonId }, data: { content } })
+  await enroll(page, data)
+  await page.goto("/lessons/" + data.manualLessonId)
+  const body = page.getByRole("region", { name: "Lesson content", exact: true })
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
+  await expect(body.getByRole("heading", { name: "Working with conditions", level: 2 })).toBeVisible()
+  await expect(body.getByRole("heading", { name: "Checklist", level: 3 })).toBeVisible()
+  await expect(body.locator("strong")).toHaveText("clear names")
+  await expect(body.locator("ul")).toHaveCount(2)
+  await expect(body.locator("ol > li")).toHaveCount(2)
+  expect(await body.getByText("Legacy line one", { exact: false }).innerText()).toContain("Legacy line one\nLegacy line two")
+  const code = body.getByRole("region", { name: "Code example", exact: true })
+  await expect(code.locator("code")).toContainText("<button>not HTML</button>")
+  await expect(body.locator("button, script, img")).toHaveCount(0)
+  await expect(body.getByRole("link", { name: "Reference", exact: true })).toHaveAttribute("href", "https://example.com/docs")
+  await expect(body.getByRole("link", { name: "Unsafe link", exact: true })).toHaveCount(0)
+  await expect(body.getByText("Unsafe link", { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => Reflect.get(window, "__lessonXss"))).toBeUndefined()
+  await page.screenshot({ path: info.outputPath("lesson-markdown-desktop.png"), fullPage: true, animations: "disabled" })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await code.focus()
+  await expect(code).toBeFocused()
+  expect(await code.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+  await expectPageToFitViewport(page)
+  await page.evaluate(() => window.scrollTo({ top: 0 }))
+  await page.screenshot({ path: info.outputPath("lesson-markdown-mobile.png"), fullPage: true, animations: "disabled" })
+})
+
+test("lesson navigation follows curriculum gaps and handles first, last and single lessons", async ({ page, data }) => {
+  await prisma.lesson.update({ where: { id: data.quizLessonId }, data: { position: 4 } })
+  await enroll(page, data)
+  await page.goto("/lessons/" + data.manualLessonId)
+  const navigation = page.getByRole("navigation", { name: "Lesson navigation", exact: true })
+  await expect(navigation.getByText("Lesson 1 of 2", { exact: true })).toBeVisible()
+  await expect(navigation.getByRole("link", { name: /Previous lesson:/ })).toHaveCount(0)
+  await navigation.getByRole("link", { name: "Next lesson: Browser Quiz Lesson", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Browser Quiz Lesson", exact: true })).toBeFocused()
+  await expect(navigation.getByText("Lesson 2 of 2", { exact: true })).toBeVisible()
+  await expect(navigation.getByRole("link", { name: /Next lesson:/ })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Mark as completed", exact: true })).toHaveCount(0)
+  await navigation.getByRole("link", { name: "Previous lesson: Browser Manual Lesson", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Browser Manual Lesson", exact: true })).toBeFocused()
+  expect(await prisma.lessonProgress.count({ where: { userId: data.student.id } })).toBe(0)
+  await prisma.lesson.delete({ where: { id: data.quizLessonId } })
+  await page.reload()
+  await expect(navigation.getByText("Lesson 1 of 1", { exact: true })).toBeVisible()
+  await expect(navigation.getByRole("link", { name: /Previous lesson:|Next lesson:/ })).toHaveCount(0)
+  await expect(navigation.getByRole("link", { name: "Course outline", exact: true })).toHaveAttribute("href", "/courses/" + data.courseId)
+})
+
+test("admin Markdown preview updates live and matches the saved draft lesson", async ({ page, data }, info) => {
+  await login(page, data.admin, "/admin")
+  await page.goto("/admin/courses/" + data.draftCourseId)
+  const third = page.getByRole("heading", { name: "Draft Third", exact: true }).locator("..").locator("..")
+  await third.getByRole("button", { name: "Edit", exact: true }).click()
+  const content = "# Editor preview\n\n- First point\n\n```html\n<button>Example</button>\n```"
+  await page.getByLabel("Content", { exact: true }).fill(content)
+  await page.getByRole("button", { name: "Show preview", exact: true }).click()
+  const preview = page.getByRole("region", { name: "Lesson content preview", exact: true })
+  await expect(preview.getByRole("heading", { name: "Editor preview", level: 2 })).toBeVisible()
+  await expect(preview.getByRole("region", { name: "Code example", exact: true })).toContainText("<button>Example</button>")
+  await expect(preview.getByRole("button")).toHaveCount(0)
+  const updated = content + "\n\n- Updated point"
+  await page.getByLabel("Content", { exact: true }).fill(updated)
+  await expect(preview.getByRole("listitem").filter({ hasText: "Updated point" })).toBeVisible()
+  expect((await prisma.lesson.findFirst({ where: { courseId: data.draftCourseId, position: 3 } }))?.content).toBe("Third content")
+  await page.evaluate(() => window.scrollTo({ top: 0 }))
+  await page.screenshot({ path: info.outputPath("lesson-editor-preview.png"), fullPage: true, animations: "disabled" })
+  await page.getByRole("button", { name: "Save changes", exact: true }).click()
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("")
+  await expect(third.getByText(/Editor preview/)).toBeVisible()
+  await page.reload()
+  await third.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(page.getByLabel("Content", { exact: true })).toHaveValue(updated)
+  const lesson = await prisma.lesson.findFirstOrThrow({ where: { courseId: data.draftCourseId, position: 3 } })
+  await page.goto("/lessons/" + lesson.id)
+  await expect(page.getByRole("region", { name: "Lesson content", exact: true }).getByRole("heading", { name: "Editor preview", level: 2 })).toBeVisible()
+  const navigation = page.getByRole("navigation", { name: "Lesson navigation", exact: true })
+  await expect(navigation.getByRole("link", { name: "Previous lesson: Draft First", exact: true })).toHaveAttribute("href", "/lessons/" + data.draftLessonId)
+  await expect(page.getByRole("button", { name: "Mark as completed", exact: true })).toHaveCount(0)
+  expect(await prisma.lessonProgress.count({ where: { userId: data.admin.id } })).toBe(0)
+})
+
+test("failed lesson navigation can retry without blocking reading or manual completion", async ({ page, data }) => {
+  await enroll(page, data)
+  const curriculum = "**/api/courses/" + data.courseId + "/curriculum"
+  await page.route(curriculum, (route) => route.fulfill({ status: 503, json: { message: "Navigation unavailable" } }))
+  await page.goto("/lessons/" + data.manualLessonId)
+  const navigation = page.getByRole("navigation", { name: "Lesson navigation", exact: true })
+  await expect(navigation.getByRole("alert")).toContainText("Lesson navigation could not be loaded")
+  await expect(page.getByRole("region", { name: "Lesson content", exact: true })).toContainText("Manual lesson content")
+  await page.getByRole("button", { name: "Mark as completed", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Lesson completed", exact: true })).toBeDisabled()
+  await page.unroute(curriculum)
+  await navigation.getByRole("button", { name: "Retry navigation", exact: true }).click()
+  await expect(navigation.getByRole("link", { name: "Next lesson: Browser Quiz Lesson", exact: true })).toBeVisible()
+  expect(await prisma.lessonProgress.count({ where: { userId: data.student.id, completed: true } })).toBe(1)
+})
+
+test("delayed navigation metadata is cancelled when leaving the old lesson", async ({ page, data }) => {
+  await enroll(page, data)
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  const heldRequests = new Set<Request>()
+  const finished: Promise<void>[] = []
+  const endpoint = "/courses/" + data.courseId + "/curriculum"
+  await page.route("**/api" + endpoint, async (route) => {
+    if (!page.url().endsWith("/lessons/" + data.manualLessonId)) {
+      await route.continue()
+      return
+    }
+    // Strict Mode may send and cancel an initial request before mounting again.
+    // Hold every request for the old lesson, rather than assuming there is one.
+    const request = route.request()
+    heldRequests.add(request)
+    let settled!: () => void
+    finished.push(new Promise<void>((resolve) => { settled = resolve }))
+    started()
+    await delayed
+    try {
+      await route.fulfill({ json: { lessons: [{ id: data.manualLessonId, title: "Old lesson", position: 1 }] } })
+    } catch (error) {
+      if (!request.failure()?.errorText.includes("ERR_ABORTED")) throw error
+    } finally { settled() }
+  })
+  try {
+    await page.goto("/lessons/" + data.manualLessonId)
+    await requested
+    await expect(page.getByText("Loading lesson navigation...", { exact: true })).toBeVisible()
+    await page.getByRole("link", { name: "Back to course", exact: true }).click()
+    await page.getByRole("heading", { name: "Browser Quiz Lesson", exact: true }).locator("..").locator("..")
+      .getByRole("link", { name: "Start", exact: true }).click()
+    const navigation = page.getByRole("navigation", { name: "Lesson navigation", exact: true })
+    await expect(navigation.getByRole("link", { name: "Previous lesson: Browser Manual Lesson", exact: true })).toBeVisible()
+    await expect.poll(() => heldRequests.size > 0 && [...heldRequests].every((request) =>
+      request.failure()?.errorText.includes("ERR_ABORTED")
+    )).toBe(true)
+    release()
+    await Promise.all(finished)
+    await expect(navigation.getByText("Lesson 2 of 2", { exact: true })).toBeVisible()
+    await expect(navigation.getByRole("alert")).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: "Browser Quiz Lesson", exact: true })).toBeVisible()
+  } finally {
+    release()
+    await Promise.all(finished)
+  }
+})
 
 test("public catalog, login, enrollment, manual completion, reload and logout", async ({ page, data }, info) => {
   await page.goto(`/catalog/${data.courseId}`)
@@ -69,6 +429,93 @@ test("quiz lookup failure blocks manual completion until retry succeeds", async 
   await page.unroute(lookup)
   await page.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(page.getByRole("button", { name: "Mark as completed", exact: true })).toBeEnabled()
+})
+
+test("catalog loading, search and clearing use the shared course cards", async ({ page, data }, info) => {
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route("**/api/courses", async (route) => {
+    started()
+    await delayed
+    await route.continue()
+  })
+  try {
+    await page.goto("/catalog")
+    await requested
+    await expect(page.getByRole("status", { name: "Loading courses", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "No courses found", exact: true })).toHaveCount(0)
+    release()
+    await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
+    await page.getByLabel("Search courses", { exact: true }).fill(`no-course-${data.student.id}`)
+    await expect(page.getByRole("heading", { name: "No courses found", exact: true })).toBeVisible()
+    await page.getByRole("button", { name: "Clear search", exact: true }).click()
+    await page.getByLabel("Search courses", { exact: true }).fill("Browser Programming Course")
+    const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Programming Course", exact: true }) })
+    await expect(card.getByRole("link", { name: "View course", exact: true })).toHaveAttribute("href", `/catalog/${data.courseId}`)
+    await expectPageToFitViewport(page)
+    await page.screenshot({ path: info.outputPath("catalog-ui.png"), fullPage: true, animations: "disabled" })
+  } finally { release() }
+})
+
+test("course filters, enrollment and dashboard preserve accessible progress", async ({ page, data }, info) => {
+  await login(page, data.student)
+  await expect(page.getByRole("heading", { name: "You haven't enrolled in any courses yet.", exact: true })).toBeVisible()
+  await page.goto("/courses")
+  await page.getByLabel("Search courses", { exact: true }).fill("Browser Programming Course")
+  await page.getByRole("button", { name: "My courses", exact: true }).click()
+  await expect(page.getByRole("button", { name: "My courses", exact: true })).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("heading", { name: "No courses found", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click()
+  await expect(page.getByRole("button", { name: "All courses", exact: true })).toHaveAttribute("aria-pressed", "true")
+  await page.getByLabel("Search courses", { exact: true }).fill("Browser Programming Course")
+  await page.getByRole("button", { name: "Available", exact: true }).click()
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  let submissions = 0
+  await page.route(`**/api/enrollments/courses/${data.courseId}`, async (route) => {
+    submissions++
+    started()
+    await delayed
+    await route.continue()
+  })
+  try {
+    await page.getByRole("button", { name: "Enroll", exact: true }).click()
+    await requested
+    await expect(page.getByRole("button", { name: "Enrolling...", exact: true })).toBeDisabled()
+    await page.getByRole("button", { name: "Enrolling...", exact: true }).dispatchEvent("click")
+    expect(submissions).toBe(1)
+    release()
+    await expect(page.getByRole("heading", { name: "No courses found", exact: true })).toBeVisible()
+    await page.getByRole("button", { name: "My courses", exact: true }).click()
+    const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Programming Course", exact: true }) })
+    await expect(card.getByRole("link", { name: "Continue", exact: true })).toBeVisible()
+    await expect(card.getByRole("progressbar", { name: "Browser Programming Course progress", exact: true })).toHaveAttribute("aria-valuenow", "0")
+    await page.screenshot({ path: info.outputPath("courses-ui.png"), fullPage: true, animations: "disabled" })
+    await page.goto("/dashboard")
+    await expect(page.getByRole("progressbar", { name: "Featured course progress", exact: true })).toHaveAttribute("aria-valuenow", "0")
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expectPageToFitViewport(page)
+    await page.screenshot({ path: info.outputPath("dashboard-mobile-ui.png"), fullPage: true, animations: "disabled" })
+  } finally { release() }
+})
+
+test("course loading errors show alerts instead of empty states", async ({ page, data }) => {
+  await page.route("**/api/courses", (route) => route.fulfill({ status: 503, json: { message: "Course service unavailable" } }))
+  await page.goto("/catalog")
+  await expect(page.getByRole("alert")).toContainText("Course service unavailable")
+  await expect(page.getByRole("heading", { name: /No courses/ })).toHaveCount(0)
+  await login(page, data.student)
+  await page.goto("/courses")
+  await expect(page.getByRole("alert")).toContainText("Course service unavailable")
+  await expect(page.getByRole("heading", { name: /No courses/ })).toHaveCount(0)
+  await page.route("**/api/enrollments/me", (route) => route.fulfill({ status: 503, json: { message: "Progress service unavailable" } }))
+  await page.goto("/dashboard")
+  await expect(page.getByRole("alert")).toContainText("Progress service unavailable")
+  await expect(page.getByRole("heading", { name: "You haven't enrolled in any courses yet.", exact: true })).toHaveCount(0)
 })
 
 test("a delayed quiz lookup is cancelled during SPA navigation and cannot change the next lesson", async ({ page, data }) => {
@@ -267,8 +714,8 @@ test("admin lesson and question forms handle gaps, conflicts and deletion of edi
   await page.getByLabel("Position", { exact: true }).fill("1")
   await page.getByRole("button", { name: "Save changes", exact: true }).click()
   await expect(page.getByText("A lesson already uses this position in the course", { exact: true })).toBeVisible()
-  page.once("dialog", (dialog) => dialog.accept())
   await third.getByRole("button", { name: "Delete", exact: true }).click()
+  await confirmDeletion(page, "Delete lesson")
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("")
   await expect(page.getByLabel("Position", { exact: true })).toHaveValue("5")
   await page.goto(`/admin/lessons/${data.draftLessonId}`)
@@ -281,8 +728,8 @@ test("admin lesson and question forms handle gaps, conflicts and deletion of edi
   await page.getByLabel("Position", { exact: true }).fill("1")
   await page.getByRole("button", { name: "Save changes", exact: true }).last().click()
   await expect(page.getByText("A question already uses this position in the quiz", { exact: true })).toBeVisible()
-  page.once("dialog", (dialog) => dialog.accept())
   await question.getByRole("button", { name: "Delete", exact: true }).click()
+  await confirmDeletion(page, "Delete question")
   await expect(page.getByText("Draft question third", { exact: true })).toHaveCount(0)
   await expect(page.getByLabel("Question", { exact: true })).toHaveValue("")
   await expect(page.getByLabel("Position", { exact: true })).toHaveValue("5")
@@ -296,16 +743,16 @@ test("admin answer authoring allows one correct answer and resets after deleting
   await page.getByLabel("Answer text", { exact: true }).fill("Browser right answer")
   await page.getByRole("checkbox", { name: /Correct answer/ }).check()
   await page.getByRole("button", { name: "Add option", exact: true }).click()
-  await expect(page.getByText("Browser right answer", { exact: true })).toBeVisible()
+  await expect(page.locator("p").filter({ hasText: /^Browser right answer$/ })).toBeVisible()
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).toBeDisabled()
   await page.getByLabel("Answer text", { exact: true }).fill("Browser second answer")
   await page.getByRole("button", { name: "Add option", exact: true }).click()
-  await expect(page.getByText("Browser second answer", { exact: true })).toBeVisible()
+  await expect(page.locator("p").filter({ hasText: /^Browser second answer$/ })).toBeVisible()
   const option = page.getByText("Browser right answer", { exact: true }).locator("..").locator("..")
   await option.getByRole("button", { name: "Edit", exact: true }).click()
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).toBeChecked()
-  page.once("dialog", (dialog) => dialog.accept())
   await option.getByRole("button", { name: "Delete", exact: true }).click()
+  await confirmDeletion(page, "Delete answer option")
   await expect(page.getByText("Browser right answer", { exact: true })).toHaveCount(0)
   await expect(page.getByLabel("Answer text", { exact: true })).toHaveValue("")
   await expect(page.getByRole("checkbox", { name: /Correct answer/ })).not.toBeChecked()
@@ -313,11 +760,15 @@ test("admin answer authoring allows one correct answer and resets after deleting
   await page.getByLabel("Answer text", { exact: true }).fill("Browser replacement answer")
   await page.getByRole("checkbox", { name: /Correct answer/ }).check()
   await page.getByRole("button", { name: "Add option", exact: true }).click()
-  await expect(page.getByText("Browser replacement answer", { exact: true })).toBeVisible()
+  await expect(page.locator("p").filter({ hasText: /^Browser replacement answer$/ })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Add option", exact: true })).toBeEnabled()
 })
 
 test("admin draft preview has no enrollment or personal completion controls", async ({ page, data }) => {
   await login(page, data.admin, "/admin")
+  await page.goto("/catalog")
+  await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toHaveCount(0)
   await page.goto("/courses")
   const draft = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Draft Course", exact: true }) })
   await expect(draft.getByRole("button", { name: "Enroll", exact: true })).toHaveCount(0)
@@ -339,18 +790,22 @@ test("publication reports incomplete quizzes, then unlocks student enrollment af
     .locator("..").locator("..").locator("..")
   await courseRow.getByRole("button", { name: "Edit", exact: true }).click()
   await page.getByLabel("Status", { exact: true }).selectOption("PUBLISHED")
+  const checklist = page.getByRole("region", { name: "Publication checklist", exact: true })
+  await expect(checklist).toContainText("must have answer options")
+  await expect(checklist.getByRole("link", { name: "Review answers", exact: true }).first()).toHaveAttribute("href", new RegExp("/admin/questions/[0-9]+$"))
   await page.getByRole("button", { name: "Save changes", exact: true }).click()
   await expect(page.getByRole("alert")).toContainText("Course cannot be published")
   await expect(page.getByRole("alert")).toContainText("must have answer options")
   await expect(courseRow.getByText("DRAFT", { exact: true })).toBeVisible()
   // A lesson without a quiz is valid; remove the unfinished quiz through the UI.
   await page.goto(`/admin/lessons/${data.draftLessonId}`)
-  page.once("dialog", (dialog) => dialog.accept())
   await page.getByRole("button", { name: "Delete quiz", exact: true }).click()
+  await confirmDeletion(page, "Delete quiz")
   await expect(page.getByRole("button", { name: "Create quiz", exact: true })).toBeVisible()
   await page.goto("/admin")
   await courseRow.getByRole("button", { name: "Edit", exact: true }).click()
   await page.getByLabel("Status", { exact: true }).selectOption("PUBLISHED")
+  await expect(checklist).toContainText("Saved content is ready to publish.")
   await page.getByRole("button", { name: "Save changes", exact: true }).click()
   await expect(courseRow.getByText("PUBLISHED", { exact: true })).toBeVisible()
   await expect(page.getByRole("alert")).toHaveCount(0)
@@ -407,7 +862,10 @@ test("a rounded legacy percentage does not mark an incomplete course completed",
   }] } }))
   await page.goto("/dashboard")
   await expect(page.getByText("In progress", { exact: true }).first()).toBeVisible()
-  await expect(page.getByText("Done", { exact: true })).toHaveCount(0)
+  const dashboardCard = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Programming Course", exact: true }) })
+  await expect(dashboardCard.getByText("Completed", { exact: true })).toHaveCount(0)
+  await expect(dashboardCard.getByRole("link", { name: "Continue", exact: true })).toBeVisible()
+  await expect(dashboardCard.getByRole("link", { name: "Review", exact: true })).toHaveCount(0)
   await page.goto("/courses")
   const course = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Programming Course", exact: true }) })
   await expect(course.getByRole("link", { name: "Continue", exact: true })).toBeVisible()
@@ -423,6 +881,7 @@ test("catalog, dashboard and admin screens remain usable on a mobile viewport", 
   for (const path of ["/dashboard", "/courses", "/admin", `/admin/courses/${data.draftCourseId}`, `/admin/lessons/${data.draftLessonId}`]) {
     await page.goto(path)
     await expect(page.locator("h1")).toBeVisible()
+    await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0)
     await expectPageToFitViewport(page)
     await expect(page.getByRole("button", { name: "Open menu", exact: true })).toBeVisible()
   }

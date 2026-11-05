@@ -74,6 +74,52 @@ describe("Draft access and course publication", () => {
     expect(await prisma.enrollment.count({ where: { courseId } })).toBe(0)
   })
 
+  it("restricts publication checks to admins and validates ids", async () => {
+    const path = `/api/courses/${courseId}/publication-check`
+    expect((await request(app).get(path)).status).toBe(401)
+    expect((await request(app).get(path).set("Authorization", `Bearer ${studentToken}`)).status).toBe(403)
+    for (const id of ["bad", "0", "-1", "1.5", "2147483648"]) {
+      expect((await request(app).get(`/api/courses/${id}/publication-check`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(400)
+    }
+    expect((await request(app).get("/api/courses/2147483647/publication-check").set("Authorization", `Bearer ${adminToken}`)).status).toBe(404)
+  })
+
+  it("reports readiness without changing the draft or leaking answer flags", async () => {
+    const before = await prisma.course.findUnique({ where: { id: courseId } })
+    const result = await request(app).get(`/api/courses/${courseId}/publication-check`).set("Authorization", `Bearer ${adminToken}`)
+    expect(result.status).toBe(200)
+    expect(result.body.check).toEqual({ courseId, status: "DRAFT", ready: true, issues: [] })
+    expect(JSON.stringify(result.body)).not.toContain("isCorrect")
+    expect(await prisma.course.findUnique({ where: { id: courseId } })).toEqual(before)
+    expect((await publish()).status).toBe(200)
+    const published = await request(app).get(`/api/courses/${courseId}/publication-check`).set("Authorization", `Bearer ${adminToken}`)
+    expect(published.body.check).toMatchObject({ status: "PUBLISHED", ready: false })
+  })
+
+  it("reports actionable course, lesson and answer issues without returning authoring data", async () => {
+    await prisma.lesson.update({ where: { id: manualLessonId }, data: { content: " " } })
+    await prisma.question.update({ where: { id: questionId }, data: { text: " " } })
+    await prisma.answerOption.deleteMany({ where: { questionId } })
+    const result = await request(app).get(`/api/courses/${courseId}/publication-check`).set("Authorization", `Bearer ${adminToken}`)
+    expect(result.status).toBe(200)
+    expect(result.body.check.ready).toBe(false)
+    expect(result.body.check.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: "course", lessonId: manualLessonId }),
+      expect.objectContaining({ target: "lesson", lessonId: quizLessonId, questionId }),
+      expect.objectContaining({ target: "question", lessonId: quizLessonId, questionId }),
+    ]))
+    expect(JSON.stringify(result.body)).not.toContain("isCorrect")
+    expect(result.body.check.lessons).toBeUndefined()
+  })
+
+  it("revalidates publication if content changes after a successful readiness check", async () => {
+    const check = await request(app).get(`/api/courses/${courseId}/publication-check`).set("Authorization", `Bearer ${adminToken}`)
+    expect(check.body.check.ready).toBe(true)
+    await prisma.answerOption.deleteMany({ where: { questionId } })
+    expect((await publish()).status).toBe(409)
+    expect((await prisma.course.findUnique({ where: { id: courseId } }))?.status).toBe("DRAFT")
+  })
+
   it("hides draft learning content and personal history even with legacy enrollment", async () => {
     await prisma.enrollment.create({ data: { userId: studentId, courseId } })
     await prisma.lessonProgress.create({ data: { userId: studentId, lessonId: manualLessonId, completed: true } })
@@ -125,10 +171,14 @@ describe("Draft access and course publication", () => {
       if (problem === "no options") await prisma.answerOption.deleteMany({ where: { questionId } })
       if (problem === "no correct option") await prisma.answerOption.updateMany({ where: { questionId }, data: { isCorrect: false } })
       if (problem === "multiple correct options") await prisma.answerOption.updateMany({ where: { questionId }, data: { isCorrect: true } })
+      const check = await request(app).get(`/api/courses/${courseId}/publication-check`).set("Authorization", `Bearer ${adminToken}`)
+      expect(check.status).toBe(200)
+      expect(check.body.check.ready).toBe(false)
       const result = await publish({ status: "PUBLISHED", title: "Must not be saved" })
       expect(result.status).toBe(409)
       expect(result.body.message).toContain("cannot be published")
       expect(result.body.issues.length).toBeGreaterThan(0)
+      expect(check.body.check.issues.map((issue: { message: string }) => issue.message)).toEqual(result.body.issues)
       expect(await prisma.course.findUnique({ where: { id: courseId } })).toMatchObject({ title: "Lifecycle Draft", status: "DRAFT" })
     }
   )

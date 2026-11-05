@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
+import { useConfirmation } from "../hooks/useConfirmation"
+import { useFormValidation, positionError } from "../hooks/useFormValidation"
+import { FieldError } from "../components/ui/FieldError"
 import type { Course } from "../types/course"
+import { LessonContent } from "../components/LessonContent"
+import { Button } from "../components/ui/Button"
+import { PublicationChecklist } from "../components/PublicationChecklist"
 
 interface Lesson {
   id: number
@@ -34,9 +40,15 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
   const [form, setForm] = useState<LessonForm>(emptyForm)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const savePending = useRef(false)
+  const deletionPending = useRef(false)
+  const confirmation = useConfirmation()
+  const validation = useFormValidation()
   const [error, setError] = useState("")
   const routeRequest = useRef<AbortController | null>(null)
   const nextLessonPosition = lessons.reduce(
@@ -76,7 +88,10 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
   }, [courseId, loadData])
 
   const resetForm = () => {
+    validation.clear()
+    setError("")
     setEditingId(null)
+    setPreviewOpen(false)
 
     setForm({
       title: "",
@@ -86,7 +101,11 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
   }
 
   const handleEdit = (lesson: Lesson) => {
+    validation.clear()
+    setError("")
+
     setEditingId(lesson.id)
+    setPreviewOpen(false)
 
     setForm({
       title: lesson.title,
@@ -100,7 +119,14 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
   ) => {
     event.preventDefault()
     const signal = routeRequest.current?.signal
-    if (!signal || signal.aborted || saving) return
+    if (!signal || signal.aborted || saving || savePending.current || deletionPending.current) return
+
+    if (!validation.validate({
+      "lesson-title": form.title.trim() ? "" : "A lesson title is required.",
+      "lesson-position": positionError(form.position ?? nextLessonPosition),
+      "lesson-content": form.content.trim() ? "" : "Lesson content is required.",
+    })) return
+    savePending.current = true
 
     try {
       setSaving(true)
@@ -136,26 +162,29 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
       })
     } catch (error) {
       if (signal.aborted) return
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to save lesson"
-      )
+      if (error instanceof Error && (error as { status?: number }).status === 409 && error.message.includes("position")) {
+        validation.setFieldError("lesson-position", error.message)
+      } else {
+        setError(error instanceof Error ? error.message : "Failed to save lesson")
+      }
     } finally {
+      savePending.current = false
       if (!signal.aborted) setSaving(false)
     }
   }
 
   const handleDelete = async (lessonId: number) => {
     const signal = routeRequest.current?.signal
-    if (!signal || signal.aborted) return
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this lesson?"
-    )
+    if (!signal || signal.aborted || savePending.current || deletionPending.current) return
+    deletionPending.current = true
+    const confirmed = await confirmation.confirm({ title: "Delete lesson?", description: `Delete "${lessons.find((lesson) => lesson.id === lessonId)?.title ?? "this lesson"}"? Its quiz, progress and attempts will also be removed.`, confirmLabel: "Delete lesson" })
 
-    if (!confirmed) {
+    if (!confirmed || signal.aborted) {
+      deletionPending.current = false
       return
     }
+
+    setDeleting(true)
 
     try {
       setError("")
@@ -178,6 +207,9 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
           ? error.message
           : "Failed to delete lesson"
       )
+    } finally {
+      deletionPending.current = false
+      if (!signal.aborted) setDeleting(false)
     }
   }
 
@@ -195,7 +227,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
   if (!course) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
         {error || "Course not found"}
       </div>
     )
@@ -203,6 +235,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
   return (
     <div className="space-y-8">
+      {confirmation.dialog}
       <div>
         <Link
           to="/admin"
@@ -226,116 +259,143 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
         </div>
       </div>
 
+      {course.status === "DRAFT" && <details className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-semibold text-slate-900">Publication readiness</summary><PublicationChecklist key={course.id} courseId={course.id} /></details>}
+
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
         {course.status === "DRAFT" && (
-          <form
+          <form noValidate onChangeCapture={validation.clearOnChange}
             onSubmit={handleSubmit}
             className="h-fit rounded-2xl border border-slate-200 bg-white p-6"
           >
-            <h2 className="text-lg font-semibold text-slate-900">
-              {editingId
-                ? "Edit lesson"
-                : "Create lesson"}
-            </h2>
+            <fieldset disabled={saving || deleting} className="min-w-0">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {editingId
+                  ? "Edit lesson"
+                  : "Create lesson"}
+              </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              {editingId
-                ? "Update the selected lesson."
-                : "Add a new lesson to this course."}
-            </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {editingId
+                  ? "Update the selected lesson."
+                  : "Add a new lesson to this course."}
+              </p>
 
-            <div className="mt-6 space-y-5">
-              <div>
-                <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Title
-                </label>
+              <div className="mt-6 space-y-5">
+                <div>
+                  <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Title
+                  </label>
 
-                <input
-                  id="lesson-title"
-                  value={form.title}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      title: event.target.value,
-                    }))
-                  }
-                  required
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
+                  <input
+                    {...validation.fieldProps("lesson-title")}
+                    id="lesson-title"
+                    value={form.title}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    required
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  <FieldError id="lesson-title" message={validation.errors["lesson-title"]} />
+                </div>
+
+                <div>
+                  <label htmlFor="lesson-position" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Position
+                  </label>
+
+                  <input
+                    {...validation.fieldProps("lesson-position")}
+                    id="lesson-position"
+                    type="number"
+                    min="1"
+                    max="2147483647"
+                    value={form.position ?? nextLessonPosition}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        position: Number(event.target.value),
+                      }))
+                    }
+                    required
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
+                  />
+                  <FieldError id="lesson-position" message={validation.errors["lesson-position"]} />
+                </div>
+
+                <div>
+                  <label htmlFor="lesson-content" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Content
+                  </label>
+
+                  <textarea
+                    {...validation.fieldProps("lesson-content", "lesson-content-help")}
+                    id="lesson-content"
+                    value={form.content}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        content: event.target.value,
+                      }))
+                    }
+                    rows={10}
+                    required
+                    className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-2.5 font-mono text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  <FieldError id="lesson-content" message={validation.errors["lesson-content"]} />
+                  <p id="lesson-content-help" className="mt-2 text-xs leading-5 text-slate-500">
+                    Markdown supported: # headings, - lists, **bold**, `inline code`, and fenced code blocks using three backticks. Plain text also works.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    aria-expanded={previewOpen}
+                    aria-controls="lesson-content-preview"
+                    onClick={() => setPreviewOpen((open) => !open)}
+                    className="mt-3"
+                  >
+                    {previewOpen ? "Hide preview" : "Show preview"}
+                  </Button>
+                  <div id="lesson-content-preview" hidden={!previewOpen} className="mt-4 min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    {form.content.trim() ? (
+                      <LessonContent content={form.content} label="Lesson content preview" />
+                    ) : <p className="text-sm text-slate-500">Start writing to preview your lesson.</p>}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="lesson-position" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Position
-                </label>
-
-                <input
-                  id="lesson-position"
-                  type="number"
-                  min="1"
-                  max="2147483647"
-                  value={form.position ?? nextLessonPosition}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      position: Number(event.target.value),
-                    }))
-                  }
-                  required
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="lesson-content" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Content
-                </label>
-
-                <textarea
-                  id="lesson-content"
-                  value={form.content}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      content: event.target.value,
-                    }))
-                  }
-                  rows={10}
-                  required
-                  className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 flex gap-3">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {saving
-                  ? "Saving..."
-                  : editingId
-                    ? "Save changes"
-                    : "Create lesson"}
-              </button>
-
-              {editingId && (
+              <div className="mt-6 flex gap-3">
                 <button
-                  type="button"
-                  onClick={resetForm}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  type="submit"
+                  disabled={saving || deleting}
+                  className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  Cancel
+                  {saving
+                    ? "Saving..."
+                    : editingId
+                      ? "Save changes"
+                      : "Create lesson"}
                 </button>
-              )}
-            </div>
+
+                {editingId && (
+                  <button disabled={saving || deleting}
+                    type="button"
+                    onClick={resetForm}
+                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </fieldset>
           </form>
         )}
         <section>
@@ -358,14 +418,14 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
               {lessons.map((lesson) => (
                 <div
                   key={lesson.id}
-                  className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
+                  className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-600">
                     {lesson.position}
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-slate-900">
+                    <h3 className="break-words font-semibold text-slate-900">
                       {lesson.title}
                     </h3>
 
@@ -374,9 +434,9 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="col-span-2 flex flex-wrap gap-2">
                     {course.status === "DRAFT" && (
-                      <button
+                      <button disabled={saving || deleting}
                         onClick={() => handleEdit(lesson)}
                         className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
                       >
@@ -385,7 +445,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
                     )}
 
                     {course.status === "DRAFT" && (
-                      <button
+                      <button disabled={saving || deleting}
                         onClick={() => handleDelete(lesson.id)}
                         className="rounded-xl border border-red-200 px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
                       >

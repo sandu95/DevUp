@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js"
 import { CoursePublicationError } from "../lib/course-publication-error.js"
+import { getPublicationIssues, publicationInclude } from "../lib/course-publication.js"
 
 interface CreateCourseData {
   title: string
@@ -48,35 +49,13 @@ export const updateCourse = async (
     return prisma.$transaction(async (tx) => {
       const course = await tx.course.findUnique({
         where: { id },
-        include: { lessons: { orderBy: { position: "asc" }, include: {
-          quiz: { include: { questions: { orderBy: { position: "asc" }, include: { options: true } } } },
-        } } },
+        include: publicationInclude,
       })
       if (!course) throw new Error("COURSE_NOT_FOUND")
       if (course.status === "PUBLISHED") throw new Error("COURSE_ALREADY_PUBLISHED")
 
-      const issues: string[] = []
-      if (!(data.title ?? course.title).trim()) issues.push("Course must have a title.")
-      if (!course.lessons.length) issues.push("Course must contain at least one lesson.")
-      for (const lesson of course.lessons) {
-        if (!lesson.title.trim() || !lesson.content.trim()) {
-          issues.push(`Lesson ${lesson.position} must have a title and content.`)
-        }
-        const quiz = lesson.quiz
-        if (!quiz) continue
-        if (!quiz.title.trim()) issues.push(`The quiz in lesson ${lesson.position} must have a title.`)
-        if (!quiz.questions.length) issues.push(`Quiz "${quiz.title}" must contain at least one question.`)
-        for (const question of quiz.questions) {
-          const label = `Question ${question.position} in quiz "${quiz.title}"`
-          if (!question.text.trim()) issues.push(`${label} must have text.`)
-          if (!question.options.length) issues.push(`${label} must have answer options.`)
-          if (question.options.some((option) => !option.text.trim())) issues.push(`${label} has a blank answer option.`)
-          if (question.options.filter((option) => option.isCorrect).length !== 1) {
-            issues.push(`${label} must have exactly one correct answer.`)
-          }
-        }
-      }
-      if (issues.length) throw new CoursePublicationError(issues)
+      const issues = getPublicationIssues({ ...course, title: data.title ?? course.title })
+      if (issues.length) throw new CoursePublicationError(issues.map((issue) => issue.message))
       return tx.course.update({ where: { id }, data })
     })
   }
@@ -94,6 +73,13 @@ export const deleteCourse = async (id: number) => {
       id,
     },
   })
+}
+
+export const getCoursePublicationCheck = async (id: number) => {
+  const course = await prisma.course.findUnique({ where: { id }, include: publicationInclude })
+  if (!course) return null
+  const issues = getPublicationIssues(course)
+  return { courseId: id, status: course.status, ready: course.status === "DRAFT" && issues.length === 0, issues }
 }
 
 export const getPublishedCourses = async () => {

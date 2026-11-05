@@ -10,6 +10,7 @@ import {
   getPublishedCourseById,
   getPublishedCourses,
   getPublicCourseCurriculum,
+  getCoursePublicationCheck,
 } from "../services/course.service.js"
 import { AuthRequest } from "../middleware/auth.middleware.js"
 
@@ -39,6 +40,19 @@ export const create = async (req: Request, res: Response) => {
     return res.status(500).json({
       message: "Failed to create course",
     })
+  }
+}
+
+export const getPublicationCheck = async (req: Request, res: Response) => {
+  const id = Number(req.params.id)
+  if (!isPositiveInt(id)) return res.status(400).json({ message: "Invalid course id" })
+  try {
+    const check = await getCoursePublicationCheck(id)
+    if (!check) return res.status(404).json({ message: "Course not found" })
+    return res.json({ check })
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ message: "Failed to check course publication" })
   }
 }
 
