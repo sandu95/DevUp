@@ -1,3 +1,5 @@
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
@@ -30,6 +32,9 @@ function LessonPage() {
     "loading" | "ready" | "error"
   >("loading")
 
+  const [reload, setReload] = useState(0)
+  const [checkingProgress, setCheckingProgress] = useState(false)
+  const progressCheckPending = useRef(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
   const [actionError, setActionError] = useState("")
@@ -46,6 +51,7 @@ function LessonPage() {
     routeRequest.current = controller
     completionPending.current = false
     quizCheckPending.current = false
+    progressCheckPending.current = false
     let active = true
 
     if (!Number.isInteger(lessonId) || lessonId <= 0) {
@@ -62,6 +68,7 @@ function LessonPage() {
       setCompleted(false)
       setProgressUnavailable(false)
       setCompleting(false)
+      setCheckingProgress(false)
 
       try {
         const lessonData = await api<{
@@ -117,7 +124,7 @@ function LessonPage() {
       active = false
       controller.abort()
     }
-  }, [lessonId])
+  }, [lessonId, reload])
 
   useEffect(() => {
     if (!loading && lesson?.id === lessonId) {
@@ -148,8 +155,31 @@ function LessonPage() {
     }
   }
 
+  const retryProgress = async () => {
+    const signal = routeRequest.current?.signal
+    if (!lesson || lesson.id !== lessonId || !signal || signal.aborted ||
+      progressCheckPending.current || completionPending.current) return
+    progressCheckPending.current = true
+    setCheckingProgress(true)
+    try {
+      const data = await api<{ progress: { lessons: { id: number; completed: boolean }[] } }>(
+        `/progress/courses/${lesson.courseId}`, { signal }
+      )
+      if (signal.aborted) return
+      setCompleted(data.progress.lessons.find((item) => item.id === lessonId)?.completed ?? false)
+      setProgressUnavailable(false)
+    } catch {
+      if (!signal.aborted) setProgressUnavailable(true)
+    } finally {
+      if (!signal.aborted) {
+        progressCheckPending.current = false
+        setCheckingProgress(false)
+      }
+    }
+  }
+
   const handleComplete = async () => {
-    if (!lesson || lesson.course.status !== "PUBLISHED" || lesson.id !== lessonId || quizStatus !== "ready" || quiz || completed || completionPending.current) {
+    if (!lesson || lesson.course.status !== "PUBLISHED" || lesson.id !== lessonId || quizStatus !== "ready" || quiz || completed || completionPending.current || progressCheckPending.current) {
       return
     }
     const signal = routeRequest.current?.signal
@@ -189,35 +219,35 @@ function LessonPage() {
 
   if (loading || (lesson && lesson.id !== lessonId)) {
     return (
-      <div className="mx-auto max-w-6xl">
-        <div className="space-y-8">
-          <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
+      <LoadingState label="Loading lesson...">
+        <div className="mx-auto max-w-6xl">
+          <div className="space-y-8">
+            <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
 
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="space-y-6">
-              <div className="h-5 w-24 animate-pulse rounded bg-slate-200" />
-              <div className="h-11 w-3/4 animate-pulse rounded bg-slate-200" />
+            <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-6">
+                <div className="h-5 w-24 animate-pulse rounded bg-slate-200" />
+                <div className="h-11 w-3/4 animate-pulse rounded bg-slate-200" />
 
-              <div className="space-y-3 pt-3">
-                <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
-                <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
-                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200" />
+                <div className="space-y-3 pt-3">
+                  <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+                  <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200" />
+                </div>
               </div>
-            </div>
 
-            <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />
+              <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />
+            </div>
           </div>
         </div>
-      </div>
+      </LoadingState>
     )
   }
 
   if (loadError || !lesson) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {loadError || "Lesson not found"}
-        </div>
+        <ErrorMessage onRetry={() => setReload((value) => value + 1)}>{loadError || "Lesson not found"}</ErrorMessage>
       </div>
     )
   }
@@ -292,7 +322,7 @@ function LessonPage() {
 
                   <Button
                     onClick={handleComplete}
-                    disabled={completed || completing}
+                    disabled={completed || completing || checkingProgress}
                     aria-busy={completing}
                     variant={completed ? "secondary" : "primary"}
                     className="shrink-0"
@@ -306,11 +336,7 @@ function LessonPage() {
                 </div>
 
                 {actionError && (
-                  <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                    <p className="text-xs leading-5 text-red-600">
-                      {actionError}
-                    </p>
-                  </div>
+                  <div className="mt-4"><ErrorMessage>{actionError}</ErrorMessage></div>
                 )}
               </div>
             )}
@@ -330,20 +356,23 @@ function LessonPage() {
               <p className="mt-1 text-sm text-amber-800">
                 Manual completion is unavailable until this check succeeds.
               </p>
-              <button
+              <Button
                 type="button"
                 onClick={retryQuizCheck}
-                className="mt-3 text-sm font-semibold text-amber-900 underline underline-offset-4"
+                variant="secondary" className="mt-3"
               >
                 Retry
-              </button>
+              </Button>
             </div>
           )}
 
           {progressUnavailable && (
-            <p role="status" className="mt-4 text-sm text-amber-700">
-              Progress could not be loaded. The completion status may be outdated.
-            </p>
+            <div role="status" className="mt-4 text-sm text-amber-700">
+              <p>Progress could not be loaded. The completion status may be outdated.</p>
+              <Button variant="secondary" className="mt-3" disabled={checkingProgress || completing} onClick={retryProgress}>
+                {checkingProgress ? "Checking progress..." : "Retry progress"}
+              </Button>
+            </div>
           )}
 
           {/* Quiz */}

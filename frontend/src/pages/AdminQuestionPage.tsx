@@ -1,3 +1,6 @@
+import { Button } from "../components/ui/Button"
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
@@ -44,6 +47,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     const [editingOptionId, setEditingOptionId] = useState<number | null>(null)
 
+    const [reload, setReload] = useState(0)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [deleting, setDeleting] = useState(false)
@@ -82,7 +86,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
         void loadQuestion(controller.signal)
         return () => controller.abort()
-    }, [questionId, loadQuestion])
+    }, [questionId, loadQuestion, reload])
 
     const handleEditOption = (option: AnswerOption) => {
         validation.clear()
@@ -204,17 +208,13 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
     if (loading) {
         return (
-            <p className="text-sm text-slate-500">
-                Loading question...
-            </p>
+            <LoadingState label="Loading question..." />
         )
     }
 
     if (!question) {
         return (
-            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                {error || "Question not found"}
-            </div>
+            <ErrorMessage onRetry={() => { setLoading(true); setError(""); setReload((value) => value + 1) }}>{error || "Question not found"}</ErrorMessage>
         )
     }
 
@@ -229,7 +229,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                     ← Back to lesson
                 </Link>
 
-                <p className="mt-5 text-sm font-medium text-violet-600">
+                <p className="mt-5 text-sm font-medium text-indigo-600">
                     Question management
                 </p>
 
@@ -243,9 +243,7 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
             </div>
 
             {error && (
-                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                </div>
+                <ErrorMessage>{error}</ErrorMessage>
             )}
 
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
@@ -311,13 +309,13 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
                             </label>
                             <FieldError id="answer-correct" message={validation.errors["answer-correct"]} />
 
-                            <button
+                            <Button
                                 type="submit"
                                 disabled={saving || deleting}
-                                className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                                className="mt-5 w-full"
                             >
                                 {saving ? "Saving..." : editingOptionId ? "Save changes" : "Add option"}
-                            </button>
+                            </Button>
                         </fieldset>
                     </form>
                 )}
@@ -375,19 +373,19 @@ function AdminQuestionContent({ questionId }: { questionId: number }) {
 
                                         {question.quiz.lesson.course.status === "DRAFT" && (
                                             <>
-                                                <button disabled={saving || deleting}
+                                                <Button disabled={saving || deleting}
                                                     onClick={() => handleEditOption(option)}
-                                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                                    variant="secondary"
                                                 >
                                                     Edit
-                                                </button>
+                                                </Button>
 
-                                                <button disabled={saving || deleting}
+                                                <Button disabled={saving || deleting}
                                                     onClick={() => handleDeleteOption(option.id)}
-                                                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                                    variant="danger-outline"
                                                 >
                                                     Delete
-                                                </button>
+                                                </Button>
                                             </>
                                         )}
                                     </div>

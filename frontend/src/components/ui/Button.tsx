@@ -1,13 +1,14 @@
 import type { ComponentProps } from "react"
 import { Link } from "react-router-dom"
 
-type Variant = "primary" | "secondary" | "ghost" | "danger"
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "danger-outline"
 
 const variants: Record<Variant, string> = {
   primary: "border-transparent bg-indigo-600 text-white hover:bg-indigo-700",
   secondary: "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
   ghost: "border-transparent text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700",
   danger: "border-transparent bg-red-600 text-white hover:bg-red-700",
+  "danger-outline": "border-red-200 bg-white text-red-700 hover:border-red-300 hover:bg-red-50",
 }
 
 function buttonClasses(variant: Variant, className = "") {

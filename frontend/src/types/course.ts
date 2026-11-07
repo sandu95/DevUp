@@ -27,8 +27,18 @@ export interface Curriculum {
   lessons: CurriculumLesson[]
 }
 
-interface CurriculumLesson {
+export interface CurriculumLesson {
   id: number
   title: string
   position: number
+}
+
+export interface CourseLessonProgress extends CurriculumLesson {
+  completed: boolean
+  completedAt: string | null
+}
+
+export interface CourseProgress extends EnrollmentProgress {
+  courseId: number
+  lessons: CourseLessonProgress[]
 }

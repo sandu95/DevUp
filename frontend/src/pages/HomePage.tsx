@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import { ButtonLink } from "../components/ui/Button"
 
 function HomePage() {
   return (
@@ -26,19 +26,18 @@ function HomePage() {
           </p>
 
           <div className="mt-9 flex flex-wrap gap-3">
-            <Link
+            <ButtonLink
               to="/catalog"
-              className="rounded-xl bg-slate-950 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               Explore courses
-            </Link>
+            </ButtonLink>
 
-            <Link
+            <ButtonLink
               to="/login"
-              className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+              variant="secondary"
             >
               Sign in
-            </Link>
+            </ButtonLink>
           </div>
 
           <div className="mt-10 flex flex-wrap gap-x-8 gap-y-3 text-sm text-slate-500">
@@ -234,12 +233,13 @@ function HomePage() {
             </p>
           </div>
 
-          <Link
+          <ButtonLink
             to="/catalog"
-            className="shrink-0 rounded-xl bg-white px-6 py-3.5 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+            variant="secondary"
+            className="shrink-0"
           >
             Explore courses
-          </Link>
+          </ButtonLink>
         </div>
       </section>
     </div>

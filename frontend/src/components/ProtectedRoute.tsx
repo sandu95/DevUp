@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom"
 import { useAuth } from "../context/useAuth"
+import { LoadingState } from "./ui/LoadingState"
 
 interface ProtectedRouteProps {
   allowedRole?: "ADMIN" | "STUDENT"
@@ -11,7 +12,7 @@ export default function ProtectedRoute({
   const { user, isAuthenticated, authLoading } = useAuth()
 
   if (authLoading) {
-    return null
+    return <LoadingState label="Restoring your session..." />
   }
 
   if (!isAuthenticated) {

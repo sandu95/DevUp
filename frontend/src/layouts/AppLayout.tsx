@@ -135,6 +135,14 @@ function AppLayout() {
                 Explore courses
               </NavLink>
 
+              <NavLink to="/quiz-history" className={navLinkClass}>
+                <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+                Quiz history
+              </NavLink>
+
               {user?.role === "ADMIN" && (
                 <div className="pt-6">
                   <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -280,6 +288,10 @@ function AppLayout() {
                   className={navLinkClass}
                 >
                   Explore courses
+                </NavLink>
+
+                <NavLink to="/quiz-history" onClick={closeMobileMenu} className={navLinkClass}>
+                  Quiz history
                 </NavLink>
 
                 {user?.role === "ADMIN" && (

@@ -339,9 +339,7 @@ export const getUserQuizAttempts = async (
       quiz: { lesson: { course: { status: "PUBLISHED" } } },
       ...(quizId ? { quizId } : {}),
     },
-    orderBy: {
-      startedAt: "desc",
-    },
+    orderBy: [{ startedAt: "desc" }, { id: "desc" }],
     include: {
       quiz: {
         select: {

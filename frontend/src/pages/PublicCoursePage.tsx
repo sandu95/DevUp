@@ -1,3 +1,6 @@
+import { Button } from "../components/ui/Button"
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { api } from "../services/api"
@@ -15,9 +18,11 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
 
   const [course, setCourse] = useState<Course | null>(null)
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [enrolling, setEnrolling] = useState(false)
   const [error, setError] = useState("")
+  const enrollmentPending = useRef(false)
   const routeRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -29,6 +34,8 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
     }
 
     const loadData = async () => {
+      setLoading(true)
+      setError("")
       try {
         const [courseData, curriculumData] = await Promise.all([
           api<{ course: Course }>(`/courses/${courseId}`, { signal }),
@@ -52,16 +59,17 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
 
     void loadData()
     return () => controller.abort()
-  }, [courseId])
+  }, [courseId, reload])
 
   const handleEnroll = async () => {
     const signal = routeRequest.current?.signal
-    if (!signal || signal.aborted || enrolling) return
+    if (!signal || signal.aborted || enrollmentPending.current) return
     if (!isAuthenticated) {
       navigate("/login")
       return
     }
 
+    enrollmentPending.current = true
     try {
       setEnrolling(true)
       setError("")
@@ -80,7 +88,10 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
           : "Failed to enroll"
       )
     } finally {
-      if (!signal.aborted) setEnrolling(false)
+      if (!signal.aborted) {
+        enrollmentPending.current = false
+        setEnrolling(false)
+      }
     }
   }
 
@@ -90,26 +101,28 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-72px)] bg-[#f7f7f5]">
-        <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-          <div className="grid gap-12 lg:grid-cols-[1fr_400px]">
-            <div className="animate-pulse space-y-6">
-              <div className="h-4 w-24 rounded bg-slate-200" />
-              <div className="h-12 w-3/4 rounded bg-slate-200" />
-              <div className="h-20 max-w-2xl rounded bg-slate-100" />
-            </div>
+      <LoadingState label="Loading course...">
+        <div className="min-h-[calc(100vh-72px)] bg-[#f7f7f5]">
+          <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
+            <div className="grid gap-12 lg:grid-cols-[1fr_400px]">
+              <div className="animate-pulse space-y-6">
+                <div className="h-4 w-24 rounded bg-slate-200" />
+                <div className="h-12 w-3/4 rounded bg-slate-200" />
+                <div className="h-20 max-w-2xl rounded bg-slate-100" />
+              </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="aspect-[16/10] animate-pulse bg-slate-100" />
-              <div className="space-y-4 p-6">
-                <div className="h-5 w-32 animate-pulse rounded bg-slate-100" />
-                <div className="h-10 animate-pulse rounded bg-slate-100" />
-                <div className="h-12 animate-pulse rounded bg-slate-100" />
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="aspect-[16/10] animate-pulse bg-slate-100" />
+                <div className="space-y-4 p-6">
+                  <div className="h-5 w-32 animate-pulse rounded bg-slate-100" />
+                  <div className="h-10 animate-pulse rounded bg-slate-100" />
+                  <div className="h-12 animate-pulse rounded bg-slate-100" />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </LoadingState>
     )
   }
 
@@ -118,9 +131,7 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
       <div className="min-h-[calc(100vh-72px)] bg-[#f7f7f5]">
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
           <div className="max-w-xl rounded-2xl border border-red-200 bg-white p-6">
-            <p className="text-sm font-medium text-red-600">
-              {error || "Course not found"}
-            </p>
+            <ErrorMessage onRetry={() => setReload((value) => value + 1)}>{error || "Course not found"}</ErrorMessage>
 
             <Link
               to="/catalog"
@@ -302,13 +313,13 @@ function PublicCourseContent({ courseId }: { courseId: number }) {
                   quizzes and progress tracking.
                 </p>
 
-                <button
+                <Button
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="mt-6 w-full rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-6 w-full"
                 >
                   {enrolling ? "Enrolling..." : "Enroll in course"}
-                </button>
+                </Button>
 
                 {!isAuthenticated && (
                   <p className="mt-3 text-center text-xs leading-5 text-slate-400">

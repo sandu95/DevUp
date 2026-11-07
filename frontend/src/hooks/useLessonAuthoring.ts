@@ -14,6 +14,7 @@ export function useLessonAuthoring(lessonId: number) {
 
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null)
 
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -64,7 +65,7 @@ export function useLessonAuthoring(lessonId: number) {
 
     void loadData(controller.signal)
     return () => controller.abort()
-  }, [lessonId, loadData])
+  }, [lessonId, loadData, reload])
 
   const handleEditQuestion = (question: Question) => {
     questionValidation.clear()
@@ -276,6 +277,7 @@ export function useLessonAuthoring(lessonId: number) {
   }
 
   return {
+    retry: () => { setLoading(true); setError(""); setReload((value) => value + 1) },
     lesson, quiz, loading, error, saving, deleting,
     confirmationDialog: confirmation.dialog,
     handleEditQuestion, handleDeleteQuestion,

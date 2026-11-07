@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button"
 import type { FormEventHandler } from "react"
 import type { useFormValidation } from "../../hooks/useFormValidation"
 import { FieldError } from "../ui/FieldError"
@@ -49,26 +50,25 @@ export function QuizForm({ title, hasQuiz, saving, busy, validation, onTitleChan
         </div>
 
         <div className="mt-5 flex gap-3">
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
             {saving
               ? "Saving..."
               : hasQuiz
                 ? "Save changes"
                 : "Create quiz"}
-          </button>
+          </Button>
 
           {hasQuiz && (
-            <button disabled={busy}
+            <Button disabled={busy}
               type="button"
               onClick={onDelete}
-              className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+              variant="danger-outline"
             >
               Delete quiz
-            </button>
+            </Button>
           )}
         </div>
       </fieldset>

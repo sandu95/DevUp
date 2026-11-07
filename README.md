@@ -46,6 +46,10 @@ Open `http://localhost:5173`. The default API is `http://localhost:3000/api`. Op
 
 Accounts are not seeded automatically. `POST /api/auth/register` creates a student. Course authoring requires a local user with the `ADMIN` role; public registration never grants that role.
 
+## Optional local demo
+
+Use the [demo setup and walkthrough](docs/DEMO.md) for three demo accounts, three published courses and an editable draft. The explicit `db:deploy:demo`, `db:seed:demo` and `dev:demo` commands use a separate local `_demo` database and ports 3002/5174. Rerunning the seed preserves edits and progress. Credentials belong only in the ignored `backend/.env.demo` file.
+
 ## Content and publication rules
 
 - Students can enroll in published courses only. Drafts are hidden from student learning APIs, including legacy draft enrollments. Admins can preview drafts without enrolling.
@@ -56,6 +60,8 @@ Accounts are not seeded automatically. `POST /api/auth/register` creates a stude
 ## Checks
 
 From `backend`: `npm test` and `npm run build`.
+
+The demo-seed integration tests create/remove their own temporary `_demo` database; the `.env.test` PostgreSQL role needs `CREATEDB`. They do not seed the application or test database. See [demo verification](docs/DEMO.md#verification).
 
 From `frontend`: `npm run test:tooling`, `npm run lint`, `npm run typecheck:e2e`, `npm run build`, and `npm run test:e2e`. Run `npm audit` from each package to check the complete dependency tree.
 
@@ -70,6 +76,8 @@ The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pus
 - [Current context](docs/DEVUP_CONTEXT.md)
 - [Lesson content and Markdown guide](docs/LESSON_CONTENT.md)
 - [Admin authoring guide](docs/ADMIN_AUTHORING.md)
+- [Local demo setup and walkthrough](docs/DEMO.md)
+- [Final local validation](docs/VALIDATION.md)
 - [Performance and dependency review](docs/PERFORMANCE_AND_DEPENDENCIES.md)
 - [Development notes](docs/DEVELOPMENT_NOTES.md)
 - [Agent instructions](AGENTS.md)

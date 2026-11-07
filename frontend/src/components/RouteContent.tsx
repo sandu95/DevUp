@@ -1,6 +1,7 @@
 import { Component, Suspense, type ReactNode } from "react"
 import { Outlet, useLocation } from "react-router-dom"
 import { Button } from "./ui/Button"
+import { LoadingState } from "./ui/LoadingState"
 
 class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -29,7 +30,7 @@ export function RouteContent() {
 
   return (
     <RouteErrorBoundary key={pathname}>
-      <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-500">Loading page...</p>}>
+      <Suspense fallback={<div className="p-6"><LoadingState /></div>}>
         <Outlet />
       </Suspense>
     </RouteErrorBoundary>

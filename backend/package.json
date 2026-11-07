@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "db:generate": "prisma generate --config prisma7.config.ts",
     "db:deploy": "prisma migrate deploy --config prisma7.config.ts",
-    "db:deploy:test": "node scripts/deploy-test-database.mjs"
+    "db:deploy:test": "node scripts/deploy-test-database.mjs",
+    "db:deploy:demo": "tsx src/demo/cli.ts migrate",
+    "db:seed:demo": "tsx src/demo/cli.ts seed",
+    "dev:demo": "tsx src/demo/cli.ts serve"
   },
   "keywords": [],
   "author": "",

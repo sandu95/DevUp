@@ -550,22 +550,24 @@ git push
 -   draft preview and published-only learner access;
 -   validated publication with actionable errors;
 -   exact course completion counts;
--   112 passing automated tests;
+-   126 passing automated tests;
 -   Git/GitHub versioning.
 
 ### Current verification state
 
 ``` text
-Automated tests: 112/112 passed (14 suites, 2026-11-06)
+Automated tests: 126/126 passed (17 suites, 2026-11-07)
 Backend build: passed
-Frontend build: passed, initial JavaScript 282.49 kB / 87.81 kB gzip, no chunk-size warning
+Frontend build: passed, initial JavaScript about 285 kB minified, no chunk-size warning
 Frontend ESLint: passed (0 errors, 0 warnings); 3 tooling compatibility tests passed
-Browser interaction: 34/34 passed in Chromium production preview and Edge development/Strict Mode (headless)
+Final browser validation at point 6: 55/55 passed in Chromium production preview and Edge development/Strict Mode (headless)
+Demo walkthrough at point 5: passed in Chromium; separate demo endpoints healthy during point 6
 Viewports: desktop and mobile 390x844
 Frontend E2E TypeScript: passed
+Full and omit-dev npm audits: 0 findings in both packages (point 6)
 Original lesson/quiz stabilization plan (steps 1-6): completed
 Prisma client generation and test migration deployment: passed
-CI baseline 3eb87a2: passed, including 34 production Chromium tests; security follow-up verified locally
+CI baseline 468cd15: passed, including audits, tooling checks and 34 production Chromium tests; CourseDetails/Quiz, UI and history follow-ups verified locally
 ```
 
 The follow-up work adds published-only learning access, admin draft preview, validation before publication, consistent payload/ID checks and conflict responses, exact lesson-count completion, cancellation of requests on navigation, accessible search/navigation controls, and wrapping admin rows on mobile. Publication failures keep the course and accompanying metadata unchanged. Quizless lessons are publishable; existing quizzes require questions, nonblank options and exactly one correct answer per question.
@@ -582,7 +584,19 @@ The admin-authoring batch (2026-11-05) reuses publication validation in a protec
 
 The performance/refactoring/dependency batch (2026-11-05) loads page modules on demand and handles loading/download failure inside the existing layouts. The initial entry drops from 501.51 to 282.49 kB minified, with no raised chunk threshold. AdminLessonPage separates its authoring hook and controlled forms. Three new browser scenarios bring the suite to 34 per browser; Chromium uses production preview and Edge retains development/Strict Mode coverage. The CI browser step uses preview mode; this performance batch passed remote run 42131841831 with all 34 Chromium scenarios. Compatible dependency updates reduce frontend findings from 13 to 10 moderate and backend findings from 8 to 4 high; audits were not clean at that stage, before the remediation below. Both builds, lint, E2E TypeScript, 112 backend tests, 34 scenarios per browser and npm ci dry runs passed. See [the detailed review](PERFORMANCE_AND_DEPENDENCIES.md).
 
-The dependency remediation (2026-11-06) pins the Prisma family at stable patch 7.10.1, adopting upstream deepmerge-ts 8.0.2 and mysql2 3.24.4 without backend overrides. Scoped minimatch 11.0.5 overrides repair the three ESLint/typescript-eslint consumers. Full and omit-dev audits now report 0 findings in both packages; neither root tooling downgrades nor ignored advisories are used. The same 49 files and diagnostics were observed before/after minimatch replacement, and three permanent tooling tests verify discovery, ignores and parser/rule execution. Clean npm ci installations, client generation, isolated test migration deployment, 112 backend tests and both builds passed. CI includes tooling tests and full audits; this security follow-up is not pushed yet. See [the remediation details](PERFORMANCE_AND_DEPENDENCIES.md).
+The dependency remediation (2026-11-06) pins the Prisma family at stable patch 7.10.1, adopting upstream deepmerge-ts 8.0.2 and mysql2 3.24.4 without backend overrides. Scoped minimatch 11.0.5 overrides repair the three ESLint/typescript-eslint consumers. Full and omit-dev audits now report 0 findings in both packages; neither root tooling downgrades nor ignored advisories are used. The same 49 files and diagnostics were observed before/after minimatch replacement, and three permanent tooling tests verify discovery, ignores and parser/rule execution. Clean npm ci installations, client generation, isolated test migration deployment, 112 backend tests and both builds passed. CI includes tooling tests and full audits; the security batch was published as 468cd15 and passed run 42385365361. See [the remediation details](PERFORMANCE_AND_DEPENDENCIES.md).
+
+The CourseDetails refactoring (2026-11-07, point 1 of the next plan) separates data/enrollment/progress logic into useCourseDetails and presentation into four course components. The route page is 108 lines instead of 568. Existing course access, copy/layout, retry, exact lesson completion, admin draft preview and abort/duplicate guards are preserved; no backend or database changes are needed. Four new browser scenarios bring local coverage to 38 per engine and include delayed reads/writes, enrollment retry and saved progress, and completed-course review/reload. Frontend build, lint, E2E TypeScript, three tooling tests and Chromium production/Edge development suites passed. Backend tests were not rerun for this frontend-only batch. Screenshots cover unknown progress on desktop and completed course details on mobile. This batch is local and uncommitted.
+
+The QuizPage refactoring (2026-11-07, point 2) separates the original state/effects/handlers into useQuiz and renders questions, answered progress, submit controls and results through four components. QuizPage is 148 lines instead of 565. Student DTOs are separate from admin authoring DTOs. Exact answer counts still determine passing; a perfect result is confirmed with a progress read, and completion remains a server-side transaction. Four new scenarios check submit failure/retry with retained answers and duplicate prevention, cancellation of a pending submit, cancellation during post-submit progress verification, and a legacy 100% score with non-perfect answer counts. Browser coverage is now 42 scenarios per engine. Frontend build, lint, E2E TypeScript, tooling checks and Chromium production/Edge development suites passed; backend source/tests are unchanged for this batch. The earlier CourseDetails work is preserved locally.
+
+The UI consistency batch (2026-11-07, point 3) extends shared buttons to public/learner/admin actions and uses announced loading states and reusable read-error retries. Initial failures recover in every data-backed page without discarding search/filter state. Lesson progress reads retry independently of quiz checks and cannot race a manual completion write. Quiz completion retries retain the result, perform only GET, prevent duplicates and cancel on navigation. Unknown SPA routes show an accessible 404 within the matching layout, while known admin routes retain their guards. Public navigation now wraps with enlarged mobile text. Eight new browser scenarios cover these paths, including focus/contrast and a single recorded quiz attempt across progress retries. Backend, schema, dependencies and mutation contracts are unchanged. Frontend build, lint, E2E TypeScript and three tooling checks passed, as did 50/50 Chromium production and 50/50 Edge development/Strict Mode scenarios. Captures for the focused 404 and mobile quiz-progress retry were reviewed. Backend tests were not rerun for this frontend-only batch. Points 1-3 are implemented locally; remaining work is quiz-attempt history and reproducible demo content.
+
+The quiz-history batch (2026-11-07, point 4) adds /quiz-history and optional ?quizId filtering through the existing personal endpoint. Navigation is available to students and admins on desktop/mobile and from quiz results. The page shows recorded scores and dates, keeps incomplete attempts distinct, and never infers passing/completion from a historical percentage. Refresh/retry, invalid filters and stale-read cancellation use the shared UI and route/session isolation. The backend only tightens empty/repeated filter validation and adds an id tie-breaker for deterministic ordering; response shape, schema, submission and progress rules remain unchanged. Five HTTP scenarios verify ownership, publication visibility and filtering; five browser scenarios cover real saved attempts, filtering/reload, navigation, read recovery, cancellation and enlarged mobile text. Opening a quiz still uses the existing enrollment checks. The history endpoint currently returns all matching records without pagination. Both builds, frontend lint/E2E TypeScript, three tooling checks, all 117 backend tests across 15 suites and 55/55 browser scenarios in both Chromium production and Edge development/Strict Mode passed. Desktop/mobile captures were reviewed. Point 4 is complete locally.
+
+The reproducible-demo batch (2026-11-07, point 5) adds explicit migrate/seed/serve commands for a dedicated local _demo database and separate 3002/5174 ports. A guarded ignored .env.demo supplies separate JWT/account secrets. The seed creates three accounts, three published courses plus an actionable draft, nine Markdown lessons, saved enrollment/progress and three quiz attempts with matching submitted answers. It refuses an unrelated nonempty database, is atomic and serializes concurrent runs; subsequent calls preserve all edits and saved learning state. Nine additional tests bring backend coverage to 126 across 17 suites. Both builds, frontend lint/E2E TypeScript/tooling, the demo migration and first/repeated seeds, both demo launchers and a read-only Chromium desktop/mobile walkthrough passed. The normal 55-case browser baseline from point 4 was not rerun because this batch changes only demo setup/data, not application UI/API behavior. Demo test fixtures require CREATEDB for the .env.test role and remove only their own randomly named _demo database. See [the setup and walkthrough](DEMO.md). Points 1-5 are complete locally; commit/push and a fresh remote CI run remain separate.
+
+Final combined validation (2026-11-07, point 6) passed Prisma generation/test migration deployment, both builds, all 126 backend tests across 17 suites, frontend lint/E2E TypeScript, three tooling checks and all 55 scenarios in both Chromium production and Edge development/Strict Mode. Full and omit-dev audits returned zero findings in both packages. Git whitespace checks and environment-file exclusions passed, and fresh screenshots were reviewed. Local source required no further fixes in this step. The separate demo remained available. See [the final validation record](VALIDATION.md) for exact commands, scope and remote-CI status. Points 1-6 are complete. Check Git history and the matching GitHub Actions run for publication status.
 
 ## 17. Future development / remaining work
 
@@ -592,7 +606,8 @@ Remaining follow-up:
 
 -   keep Prisma CLI/client/adapter versions aligned when upgrading;
 -   remove scoped minimatch overrides once upstream ESLint/typescript-eslint consumers adopt patched versions directly, after rerunning tooling tests and lint;
--   refactor CourseDetailsPage and QuizPage one workflow at a time, preserving cancellation and completion behavior;
+-   all six local steps are complete: course/quiz refactoring, shared UI/read recovery, quiz history, demo content and final validation;
+-   inspect the matching GitHub Actions run after publishing the completed batch;
 
 -   monitor GitHub Actions results after changes;
 -   verify Chromium results in CI and optionally additional real devices;

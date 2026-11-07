@@ -22,6 +22,7 @@ const filters: { value: Filter; label: string }[] = [
 function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [actionCourseId, setActionCourseId] = useState<number | null>(null)
@@ -54,7 +55,7 @@ function CoursesPage() {
     }
     void loadCourses()
     return () => controller.abort()
-  }, [])
+  }, [reload])
 
   const enrollmentMap = useMemo(() => new Map(
     enrollments.map((enrollment) => [enrollment.course.id, enrollment])
@@ -140,7 +141,7 @@ function CoursesPage() {
           )}
         </div>
       </section>
-      {error && <ErrorMessage>{error}</ErrorMessage>}
+      {error && <ErrorMessage onRetry={courses.length === 0 ? () => setReload((value) => value + 1) : undefined}>{error}</ErrorMessage>}
       {loading ? <CourseGridSkeleton /> : filteredCourses.length === 0 ? (
         !error && <EmptyState
           title={search.trim() || filter !== "all" ? "No courses found" : "No courses available yet"}

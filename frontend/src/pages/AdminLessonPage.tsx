@@ -1,3 +1,6 @@
+import { Button, ButtonLink } from "../components/ui/Button"
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { Link, useParams } from "react-router-dom"
 import { useLessonAuthoring } from "../hooks/useLessonAuthoring"
 import { QuizForm } from "../components/admin/QuizForm"
@@ -10,7 +13,7 @@ function AdminLessonPage() {
 
 function AdminLessonContent({ lessonId }: { lessonId: number }) {
   const {
-    lesson, quiz, loading, error, saving, deleting, confirmationDialog,
+    retry, lesson, quiz, loading, error, saving, deleting, confirmationDialog,
     handleEditQuestion, handleDeleteQuestion, quizForm, questionForm,
   } = useLessonAuthoring(lessonId)
 
@@ -20,17 +23,13 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
 
   if (loading) {
     return (
-      <p className="text-sm text-slate-500">
-        Loading lesson...
-      </p>
+      <LoadingState label="Loading lesson..." />
     )
   }
 
   if (!lesson) {
     return (
-      <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {error || "Lesson not found"}
-      </div>
+      <ErrorMessage onRetry={retry}>{error || "Lesson not found"}</ErrorMessage>
     )
   }
 
@@ -45,7 +44,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
           ← Back to course
         </Link>
 
-        <p className="mt-5 text-sm font-medium text-violet-600">
+        <p className="mt-5 text-sm font-medium text-indigo-600">
           Lesson management
         </p>
 
@@ -59,9 +58,7 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
       </div>
 
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
+        <ErrorMessage>{error}</ErrorMessage>
       )}
 
       {lesson.course.status === "DRAFT" && (
@@ -110,32 +107,32 @@ function AdminLessonContent({ lessonId }: { lessonId: number }) {
                         </p>
 
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <Link
+                          <ButtonLink
                             to={`/admin/questions/${question.id}`}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                            variant="secondary"
                           >
                             Manage answers
-                          </Link>
+                          </ButtonLink>
 
                           {lesson.course.status === "DRAFT" && (
                             <>
-                              <button disabled={saving || deleting}
+                              <Button disabled={saving || deleting}
                                 type="button"
                                 onClick={() => handleEditQuestion(question)}
-                                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                variant="secondary"
                               >
                                 Edit
-                              </button>
+                              </Button>
 
-                              <button disabled={saving || deleting}
+                              <Button disabled={saving || deleting}
                                 type="button"
                                 onClick={() =>
                                   handleDeleteQuestion(question.id)
                                 }
-                                className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                variant="danger-outline"
                               >
                                 Delete
-                              </button>
+                              </Button>
                             </>
                           )}
                         </div>

@@ -27,6 +27,564 @@ async function enroll(page: Page, data: BrowserData) {
   await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toBeVisible()
 }
 
+async function openDraftQuiz(page: Page) {
+  await page.getByRole("link", { name: "Explore courses", exact: true }).click()
+  const draft = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Draft Course", exact: true }) })
+  await draft.getByRole("link", { name: "Preview draft", exact: true }).click()
+  const lesson = page.getByRole("heading", { name: "Draft First", exact: true }).locator("..").locator("..")
+  await lesson.getByRole("link", { name: "Preview", exact: true }).click()
+  await page.getByRole("link", { name: "Preview quiz", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Draft Quiz", exact: true })).toBeVisible()
+}
+
+test("quiz history is protected and available in desktop and mobile personal navigation", async ({ page, data }) => {
+  let reads = 0
+  let downloads = 0
+  page.on("request", (request) => {
+    if (request.url().includes("/api/quizzes/attempts/me")) reads++
+    if (pageModule("QuizHistoryPage").test(request.url())) downloads++
+  })
+  await page.goto("/quiz-history")
+  await expect(page).toHaveURL("/")
+  expect(reads).toBe(0)
+  expect(downloads).toBe(0)
+  await login(page, data.student)
+  await page.getByRole("link", { name: "Quiz history", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Quiz history", exact: true })).toBeFocused()
+  await expect(page.getByRole("heading", { name: "No quiz attempts yet", exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Quiz history", exact: true })).toHaveAttribute("aria-current", "page")
+  await page.getByRole("button", { name: "Log out", exact: true }).click()
+  await login(page, data.admin, "/admin")
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole("button", { name: "Open menu", exact: true }).click()
+  await page.getByRole("link", { name: "Quiz history", exact: true }).click()
+  await expect(page).toHaveURL("/quiz-history")
+  await expect(page.getByRole("button", { name: "Close navigation", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("heading", { name: "No quiz attempts yet", exact: true })).toBeVisible()
+})
+
+test("quiz history shows saved scores, quiz filtering and mobile cards without claiming lesson completion", async ({ page, data }, info) => {
+  await enroll(page, data)
+  const otherQuiz = await prisma.quiz.create({ data: { lessonId: data.manualLessonId,
+    title: "Another programming knowledge check with a longer title for the mobile layout" } })
+  await prisma.quizAttempt.create({ data: { userId: data.student.id, quizId: otherQuiz.id, score: 100,
+    startedAt: new Date("2020-01-01T12:00:00Z") } })
+  await prisma.quizAttempt.create({ data: { userId: data.admin.id, quizId: data.quizId, score: 88, completedAt: new Date() } })
+  const draftQuiz = await prisma.quiz.findUniqueOrThrow({ where: { lessonId: data.draftLessonId } })
+  await prisma.quizAttempt.create({ data: { userId: data.student.id, quizId: draftQuiz.id, score: 100, completedAt: new Date() } })
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Wrong ${index}`, { exact: true }).click()
+  await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+  await expect(page.getByText("0%", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Try again", exact: true }).click()
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+  await expect(page.getByRole("status")).toContainText("Your lesson has been marked as completed")
+  const completed = await prisma.lessonProgress.findUniqueOrThrow({ where: { userId_lessonId: { userId: data.student.id, lessonId: data.quizLessonId } } })
+  await page.getByRole("link", { name: "View quiz history", exact: true }).click()
+  await expect(page).toHaveURL(`/quiz-history?quizId=${data.quizId}`)
+  await expect(page.getByRole("status")).toHaveText("2 attempts for Browser Knowledge Check")
+  const cards = page.getByRole("article")
+  await expect(cards).toHaveCount(2)
+  await expect(cards.nth(0).getByText("100%", { exact: true })).toBeVisible()
+  await expect(cards.nth(1).getByText("0%", { exact: true })).toBeVisible()
+  await expect(cards.nth(0).locator("time")).toHaveAttribute("datetime", /T/)
+  await expect(page.getByText("Perfect score", { exact: true })).toHaveCount(0)
+  await page.getByRole("link", { name: "View all attempts", exact: true }).click()
+  await expect(page.getByRole("status")).toHaveText("3 attempts")
+  await expect(page.getByRole("article")).toHaveCount(3)
+  await expect(page.getByText("88%", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("heading", { name: "Draft Quiz", exact: true })).toHaveCount(0)
+  const pending = cards.filter({ has: page.getByRole("heading", { name: otherQuiz.title, exact: true }) })
+  await expect(pending.getByText("In progress", { exact: true })).toBeVisible()
+  await expect(pending.getByText("Not submitted", { exact: true })).toBeVisible()
+  await expect(pending.getByText("100%", { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath("quiz-history-desktop.png"), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addStyleTag({ content: "html { font-size: 20px !important; }" })
+  await expectPageToFitViewport(page)
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+  await page.screenshot({ path: info.outputPath("quiz-history-mobile.png"), fullPage: true })
+  await pending.getByRole("link", { name: "Quiz attempts", exact: true }).click()
+  await expect(page.getByRole("status")).toContainText("1 attempt for Another programming")
+  await expect(page.getByRole("article")).toHaveCount(1)
+  await page.getByRole("link", { name: "View all attempts", exact: true }).click()
+  await expect(page.getByRole("status")).toHaveText("3 attempts")
+  await page.reload()
+  await expect(page.getByRole("status")).toHaveText("3 attempts")
+  await page.getByRole("article").first().getByRole("link", { name: "Open quiz", exact: true }).click()
+  await expect(page).toHaveURL(`/quizzes/${data.quizId}`)
+  await expect(page.getByRole("radio")).toHaveCount(6)
+  expect(await prisma.quizAttempt.count({ where: { userId: data.student.id, quizId: data.quizId } })).toBe(2)
+  expect((await prisma.lessonProgress.findUniqueOrThrow({ where: { id: completed.id } })).completedAt).toEqual(completed.completedAt)
+})
+
+test("quiz history distinguishes loading, read errors and empty results with retry and refresh", async ({ page, data }) => {
+  await login(page, data.student)
+  let unavailable = true
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  await page.route("**/api/quizzes/attempts/me", async (route) => {
+    await delayed
+    try {
+      await route.fulfill(unavailable ? { status: 503, json: { message: "History temporarily unavailable" } } : { json: { attempts: [] } })
+    } catch (error) { if (!route.request().failure()) throw error }
+  })
+  try {
+    await page.goto("/quiz-history")
+    await expect(page.getByRole("status")).toHaveText("Loading your quiz history...")
+    await expect(page.getByRole("button", { name: "Refresh history", exact: true })).toBeDisabled()
+    await expect(page.getByText("No quiz attempts yet", { exact: true })).toHaveCount(0)
+    release()
+    await expect(page.getByRole("alert")).toContainText("History temporarily unavailable")
+    await expect(page.getByText("No quiz attempts yet", { exact: true })).toHaveCount(0)
+    unavailable = false
+    await page.getByRole("button", { name: "Retry", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "No quiz attempts yet", exact: true })).toBeVisible()
+    await expect(page.getByRole("status")).toHaveText("0 attempts")
+    unavailable = true
+    await page.getByRole("button", { name: "Refresh history", exact: true }).click()
+    await expect(page.getByRole("alert")).toContainText("History temporarily unavailable")
+    await expect(page.getByText("No quiz attempts yet", { exact: true })).toHaveCount(0)
+  } finally { release() }
+})
+
+test("quiz history cancels a delayed quiz filter when returning to all attempts", async ({ page, data }) => {
+  await login(page, data.student)
+  const pending: Request[] = []
+  let settled = 0
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  await page.route("**/api/quizzes/attempts/me*", async (route) => {
+    if (!new URL(route.request().url()).searchParams.has("quizId")) {
+      await route.fulfill({ json: { attempts: [] } })
+      return
+    }
+    pending.push(route.request())
+    await delayed
+    try { await route.fulfill({ json: { attempts: [{ id: 1, quizId: data.quizId, score: 100,
+      startedAt: "2026-01-01T12:00:00Z", completedAt: "2026-01-01T12:00:00Z",
+      quiz: { id: data.quizId, lessonId: data.quizLessonId, title: "Old filtered quiz" } }] } }) }
+    catch (error) { if (!route.request().failure()) throw error }
+    finally { settled++ }
+  })
+  try {
+    await page.goto(`/quiz-history?quizId=${data.quizId}`)
+    await expect(page.getByRole("status")).toHaveText("Loading your quiz history...")
+    await expect.poll(() => pending.length).toBeGreaterThan(0)
+    await page.getByRole("link", { name: "View all attempts", exact: true }).click()
+    await expect(page.getByRole("status")).toHaveText("0 attempts")
+    await expect.poll(() => pending.every((request) => Boolean(request.failure()))).toBe(true)
+    release()
+    await expect.poll(() => settled).toBe(pending.length)
+    await expect(page.getByRole("article")).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: "No quiz attempts yet", exact: true })).toBeVisible()
+  } finally { release() }
+})
+
+test("quiz history rejects invalid URL filters without fetching broader history", async ({ page, data }) => {
+  await login(page, data.student)
+  let reads = 0
+  page.on("request", (request) => { if (request.url().includes("/api/quizzes/attempts/me")) reads++ })
+  for (const filter of ["", "bad", "0", "-1", "1.5", "2147483648", "1&quizId=2"]) {
+    await page.goto(`/quiz-history?quizId=${filter}`)
+    await expect(page.getByRole("alert")).toHaveText("Invalid quiz filter.")
+    await expect(page.getByRole("article")).toHaveCount(0)
+  }
+  expect(reads).toBe(0)
+  await page.getByRole("link", { name: "View all attempts", exact: true }).click()
+  await expect(page.getByRole("status")).toHaveText("0 attempts")
+  await page.goto("/quiz-history?quizId=2147483647")
+  await expect(page.getByRole("heading", { name: "No attempts for this quiz yet", exact: true })).toBeVisible()
+})
+
+test("public unknown routes provide keyboard navigation and fit enlarged mobile text", async ({ page }, info) => {
+  await page.goto("/missing-page")
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeFocused()
+  await expect(page.getByRole("link", { name: "Back to home", exact: true })).toBeVisible()
+  await page.keyboard.press("Tab")
+  const browse = page.getByRole("link", { name: "Browse courses", exact: true })
+  await expect(browse).toBeFocused()
+  const style = await browse.evaluate((element) => {
+    const css = getComputedStyle(element)
+    const canvas = document.createElement("canvas")
+    canvas.width = canvas.height = 1
+    const context = canvas.getContext("2d")!
+    const luminance = (color: string) => {
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+      const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((value) => {
+        const channel = value / 255
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      })
+      return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+    }
+    const text = luminance(css.color)
+    const background = luminance(css.backgroundColor)
+    return { outline: css.outlineStyle, width: css.outlineWidth,
+      contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05) }
+  })
+  expect(style.outline).toBe("solid")
+  expect(style.width).toBe("2px")
+  expect(style.contrast).toBeGreaterThanOrEqual(4.5)
+  await page.screenshot({ path: info.outputPath("not-found-desktop-focus.png"), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addStyleTag({ content: "html { font-size: 20px !important; }" })
+  await expectPageToFitViewport(page)
+  await page.screenshot({ path: info.outputPath("not-found-mobile.png"), fullPage: true })
+  await page.keyboard.press("Enter")
+  await expect(page).toHaveURL("/catalog")
+  await page.goto("/catalog/unknown/path")
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible()
+})
+
+test("authenticated unknown routes keep learner navigation and admin guards", async ({ page, data }) => {
+  await login(page, data.student)
+  let adminReads = 0
+  page.on("request", (request) => { if (/\/api\/(lessons\/course|quizzes\/.*\/admin)/.test(request.url())) adminReads++ })
+  await page.goto("/admin/unknown/path")
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Log out", exact: true })).toBeVisible()
+  await page.getByRole("link", { name: "Go to dashboard", exact: true }).click()
+  await expect(page).toHaveURL("/dashboard")
+  await page.goto(`/admin/courses/${data.draftCourseId}`)
+  await expect(page).toHaveURL("/dashboard")
+  expect(adminReads).toBe(0)
+})
+
+test("public read failures retry without losing the catalog search", async ({ page, data }) => {
+  let unavailable = true
+  await page.route("**/api/courses", (route) => unavailable
+    ? route.fulfill({ status: 503, json: { message: "Catalog temporarily unavailable" } }) : route.continue())
+  await page.goto("/catalog")
+  await expect(page.getByRole("alert")).toContainText("Catalog temporarily unavailable")
+  await expect(page.getByText("No courses available yet", { exact: true })).toHaveCount(0)
+  await page.getByLabel("Search courses", { exact: true }).fill("Browser Programming")
+  unavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
+  await expect(page.getByLabel("Search courses", { exact: true })).toHaveValue("Browser Programming")
+  unavailable = true
+  await page.route(`**/api/courses/${data.courseId}/curriculum`, (route) => unavailable
+    ? route.fulfill({ status: 503, json: { message: "Curriculum temporarily unavailable" } }) : route.continue())
+  await page.goto(`/catalog/${data.courseId}`)
+  await expect(page.getByRole("alert")).toContainText("Curriculum temporarily unavailable")
+  unavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Enroll in course", exact: true })).toBeEnabled()
+})
+
+test("learner read failures recover on dashboard, courses and course details", async ({ page, data }) => {
+  await login(page, data.student)
+  let unavailable = true
+  await page.route("**/api/enrollments/me", (route) => unavailable
+    ? route.fulfill({ status: 503, json: { message: "Enrollment reads unavailable" } }) : route.continue())
+  await page.goto("/dashboard")
+  await expect(page.getByRole("alert")).toContainText("Enrollment reads unavailable")
+  await expect(page.getByText("You haven't enrolled in any courses yet.", { exact: true })).toHaveCount(0)
+  unavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByText("You haven't enrolled in any courses yet.", { exact: true })).toBeVisible()
+  unavailable = true
+  await page.goto("/courses")
+  await expect(page.getByRole("alert")).toContainText("Enrollment reads unavailable")
+  await page.getByLabel("Search courses", { exact: true }).fill("Browser")
+  await page.getByRole("button", { name: "Available", exact: true }).click()
+  unavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Browser Programming Course", exact: true })).toBeVisible()
+  await expect(page.getByLabel("Search courses", { exact: true })).toHaveValue("Browser")
+  await expect(page.getByRole("button", { name: "Available", exact: true })).toHaveAttribute("aria-pressed", "true")
+  unavailable = true
+  await page.goto(`/courses/${data.courseId}`)
+  await expect(page.getByRole("alert")).toContainText("Enrollment reads unavailable")
+  unavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await page.getByRole("button", { name: "Enroll in course", exact: true }).click()
+  await expect(page.getByRole("progressbar", { name: "Course progress", exact: true })).toHaveAttribute("aria-valuenow", "0")
+})
+
+test("quiz read and progress retries preserve the result and create only one attempt", async ({ page, data }, info) => {
+  await enroll(page, data)
+  let quizUnavailable = true
+  await page.route(`**/api/quizzes/${data.quizId}`, (route) => quizUnavailable
+    ? route.fulfill({ status: 503, json: { message: "Quiz read unavailable" } }) : route.continue())
+  await page.goto(`/quizzes/${data.quizId}`)
+  await expect(page.getByRole("alert")).toContainText("Quiz read unavailable")
+  await expect(page.getByRole("button", { name: "Submit quiz", exact: true })).toHaveCount(0)
+  quizUnavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  let progressReads = 0
+  let submits = 0
+  let manualWrites = 0
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return
+    if (request.url().endsWith(`/quizzes/${data.quizId}/submit`)) submits++
+    if (request.url().includes("/progress/lessons/")) manualWrites++
+  })
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route(`**/api/progress/courses/${data.courseId}`, async (route) => {
+    progressReads++
+    if (progressReads === 1) await route.fulfill({ status: 503, json: { message: "Progress unavailable" } })
+    else if (progressReads === 2) await route.fulfill({ json: { progress: { lessons: [{ id: data.quizLessonId, completed: false }] } } })
+    else { started(); await delayed; await route.continue() }
+  })
+  try {
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await expect(page.getByRole("status")).toContainText("We couldn't verify")
+    await expect(page.getByText("100%", { exact: true })).toBeVisible()
+    const saved = await prisma.lessonProgress.findUniqueOrThrow({ where: { userId_lessonId: { userId: data.student.id, lessonId: data.quizLessonId } } })
+    await page.getByRole("button", { name: "Retry progress check", exact: true }).click()
+    await expect(page.getByRole("status")).toContainText("hasn't been marked as completed yet")
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expectPageToFitViewport(page)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+    await page.screenshot({ path: info.outputPath("quiz-progress-retry-mobile.png"), fullPage: true })
+    const retry = page.getByRole("button", { name: "Retry progress check", exact: true })
+    await retry.evaluate((button: HTMLButtonElement) => { button.click(); button.click() })
+    await requested
+    await expect(page.getByRole("status")).toContainText("Checking your lesson progress")
+    expect(progressReads).toBe(3)
+    release()
+    await expect(page.getByRole("status")).toContainText("Your lesson has been marked as completed")
+    expect(submits).toBe(1)
+    expect(manualWrites).toBe(0)
+    expect(await prisma.quizAttempt.count({ where: { userId: data.student.id, quizId: data.quizId } })).toBe(1)
+    expect((await prisma.lessonProgress.findUniqueOrThrow({ where: { id: saved.id } })).completedAt).toEqual(saved.completedAt)
+  } finally { release() }
+})
+
+test("lesson read retries keep quiz uncertainty separate from saved progress", async ({ page, data }) => {
+  await enroll(page, data)
+  await prisma.lessonProgress.create({ data: { userId: data.student.id, lessonId: data.manualLessonId, completed: true, completedAt: new Date() } })
+  let lessonUnavailable = true
+  let progressUnavailable = true
+  let quizUnavailable = true
+  await page.route(`**/api/lessons/${data.manualLessonId}`, (route) => lessonUnavailable
+    ? route.fulfill({ status: 503, json: { message: "Lesson read unavailable" } }) : route.continue())
+  await page.route(`**/api/progress/courses/${data.courseId}`, (route) => progressUnavailable
+    ? route.fulfill({ status: 503, json: { message: "Progress read unavailable" } }) : route.continue())
+  await page.route(`**/api/quizzes/lesson/${data.manualLessonId}`, (route) => quizUnavailable
+    ? route.fulfill({ status: 503, json: { message: "Quiz lookup unavailable" } }) : route.continue())
+  await page.goto(`/lessons/${data.manualLessonId}`)
+  await expect(page.getByRole("alert")).toContainText("Lesson read unavailable")
+  lessonUnavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByText("Manual completion is unavailable until this check succeeds.", { exact: true })).toBeVisible()
+  progressUnavailable = false
+  await page.getByRole("button", { name: "Retry progress", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Retry progress", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Mark as completed", exact: true })).toHaveCount(0)
+  quizUnavailable = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Lesson completed", exact: true })).toBeDisabled()
+})
+
+test("leaving a pending progress retry cancels the read and keeps the next quiz clean", async ({ page, data }) => {
+  await prisma.enrollment.create({ data: { userId: data.admin.id, courseId: data.courseId } })
+  await login(page, data.admin, "/admin")
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  let unavailable = true
+  let pending: Request | undefined
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  let settled!: () => void
+  const finished = new Promise<void>((resolve) => { settled = resolve })
+  await page.route(`**/api/progress/courses/${data.courseId}`, async (route) => {
+    if (unavailable) {
+      await route.fulfill({ status: 503, json: { message: "Progress unavailable" } })
+      return
+    }
+    pending = route.request()
+    started()
+    await delayed
+    try { await route.fulfill({ json: { progress: { lessons: [{ id: data.quizLessonId, completed: true }] } } }) }
+    catch (error) { if (!pending.failure()) throw error }
+    finally { settled() }
+  })
+  try {
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await expect(page.getByRole("status")).toContainText("We couldn't verify")
+    unavailable = false
+    await page.getByRole("button", { name: "Retry progress check", exact: true }).click()
+    await requested
+    await openDraftQuiz(page)
+    await expect.poll(() => Boolean(pending?.failure())).toBe(true)
+    release()
+    await finished
+    await expect(page.getByRole("heading", { name: "Draft Quiz", exact: true })).toBeVisible()
+    await expect(page.getByText("Perfect score", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Retry progress check", exact: true })).toHaveCount(0)
+  } finally { release() }
+})
+
+test("admin initial read retries recover all editors without false empty states", async ({ page, data }) => {
+  await login(page, data.admin, "/admin")
+  const question = await prisma.question.findFirstOrThrow({ where: { quiz: { lessonId: data.draftLessonId } } })
+  const screens = [
+    { url: "/admin", api: "**/api/courses", heading: "Course management" },
+    { url: `/admin/courses/${data.draftCourseId}`, api: `**/api/courses/${data.draftCourseId}`, heading: "Browser Draft Course" },
+    { url: `/admin/lessons/${data.draftLessonId}`, api: `**/api/lessons/${data.draftLessonId}`, heading: "Draft First" },
+    { url: `/admin/questions/${question.id}`, api: `**/api/quizzes/questions/${question.id}/admin`, heading: `Question ${question.position}` },
+  ]
+  for (const screen of screens) {
+    let unavailable = true
+    await page.route(screen.api, (route) => unavailable
+      ? route.fulfill({ status: 503, json: { message: "Editor read unavailable" } }) : route.continue())
+    await page.goto(screen.url)
+    await expect(page.getByRole("alert")).toContainText("Editor read unavailable")
+    await expect(page.locator("form")).toHaveCount(0)
+    unavailable = false
+    await page.getByRole("button", { name: "Retry", exact: true }).click()
+    await expect(page.getByRole("heading", { name: screen.heading, exact: true })).toBeVisible()
+    await expect(page.locator("form").first()).toBeVisible()
+    await page.unroute(screen.api)
+  }
+})
+
+test("quiz submission failure keeps answers and retry prevents duplicates", async ({ page, data }, info) => {
+  await enroll(page, data)
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  const payloads: unknown[] = []
+  let manualWrites = 0
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/progress\/lessons\/\d+\/complete$/.test(request.url())) manualWrites++
+  })
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route(`**/api/quizzes/${data.quizId}/submit`, async (route) => {
+    payloads.push(route.request().postDataJSON())
+    if (payloads.length === 1) {
+      await route.fulfill({ status: 503, json: { message: "Quiz submission unavailable" } })
+      return
+    }
+    started()
+    await delayed
+    await route.continue()
+  })
+  try {
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await expect(page.getByRole("alert")).toHaveText("Quiz submission unavailable")
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(3)
+    expect(await prisma.quizAttempt.count({ where: { userId: data.student.id, quizId: data.quizId } })).toBe(0)
+    await page.screenshot({ path: info.outputPath("quiz-submit-error.png"), fullPage: true, animations: "disabled" })
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await requested
+    const submit = page.getByRole("button", { name: "Submitting...", exact: true })
+    await expect(submit).toBeDisabled()
+    for (const radio of await page.getByRole("radio").all()) await expect(radio).toBeDisabled()
+    await submit.dispatchEvent("click")
+    await expect(page.getByRole("radio", { name: "Correct 1", exact: true })).toBeChecked()
+    expect(payloads).toHaveLength(2)
+    expect(payloads[1]).toEqual(payloads[0])
+    release()
+    await expect(page.getByRole("status")).toContainText("Your lesson has been marked as completed")
+    expect(manualWrites).toBe(0)
+    expect(await prisma.quizAttempt.count({ where: { userId: data.student.id, quizId: data.quizId } })).toBe(1)
+  } finally { release() }
+})
+
+test("leaving a pending quiz submission cannot replace the next quiz with its result", async ({ page, data }) => {
+  await prisma.enrollment.create({ data: { userId: data.admin.id, courseId: data.courseId } })
+  await login(page, data.admin, "/admin")
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  let pending: Request | undefined
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  let settled!: () => void
+  const finished = new Promise<void>((resolve) => { settled = resolve })
+  await page.route(`**/api/quizzes/${data.quizId}/submit`, async (route) => {
+    pending = route.request()
+    started()
+    await delayed
+    try {
+      await route.fulfill({ status: 201, json: { result: { attemptId: 1, score: 100, correctAnswers: 3, totalQuestions: 3 } } })
+    } catch (error) { if (!pending.failure()) throw error }
+    finally { settled() }
+  })
+  try {
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await requested
+    await openDraftQuiz(page)
+    await expect.poll(() => Boolean(pending?.failure())).toBe(true)
+    release()
+    await finished
+    await expect(page.getByRole("heading", { name: "Draft Quiz", exact: true })).toBeVisible()
+    await expect(page.getByText("Perfect score", { exact: true })).toHaveCount(0)
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Submit quiz", exact: true })).toBeDisabled()
+  } finally { release() }
+})
+
+test("leaving a quiz during completion verification cancels its delayed progress read", async ({ page, data }) => {
+  await prisma.enrollment.create({ data: { userId: data.admin.id, courseId: data.courseId } })
+  await login(page, data.admin, "/admin")
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  let pending: Request | undefined
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  let settled!: () => void
+  const finished = new Promise<void>((resolve) => { settled = resolve })
+  await page.route(`**/api/progress/courses/${data.courseId}`, async (route) => {
+    pending = route.request()
+    started()
+    await delayed
+    try {
+      await route.fulfill({ status: 200, json: { progress: { lessons: [{ id: data.quizLessonId, completed: true }] } } })
+    } catch (error) { if (!pending.failure()) throw error }
+    finally { settled() }
+  })
+  try {
+    await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+    await requested
+    await expect(page.getByRole("status")).toHaveText("Perfect score! Checking your lesson progress...")
+    await openDraftQuiz(page)
+    await expect.poll(() => Boolean(pending?.failure())).toBe(true)
+    release()
+    await finished
+    await expect(page.getByRole("status")).toContainText("Draft preview")
+    await expect(page.getByText("Perfect score", { exact: true })).toHaveCount(0)
+    expect(await prisma.lessonProgress.count({ where: { userId: data.admin.id, lessonId: data.quizLessonId, completed: true } })).toBe(1)
+  } finally { release() }
+})
+
+test("quiz result uses exact answer counts instead of a rounded legacy percentage", async ({ page, data }) => {
+  await enroll(page, data)
+  await page.goto(`/quizzes/${data.quizId}`)
+  for (const index of [1, 2, 3]) await page.getByText(`Correct ${index}`, { exact: true }).click()
+  let progressReads = 0
+  page.on("request", (request) => { if (request.url().endsWith(`/progress/courses/${data.courseId}`)) progressReads++ })
+  await page.route(`**/api/quizzes/${data.quizId}/submit`, (route) => route.fulfill({ status: 201, json: { result: { attemptId: 1, score: 100, correctAnswers: 2, totalQuestions: 3 } } }))
+  await page.getByRole("button", { name: "Submit quiz", exact: true }).click()
+  await expect(page.getByText("Quiz submitted", { exact: true })).toBeVisible()
+  await expect(page.getByText("Perfect score", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("status")).toContainText("A perfect score completes this lesson.")
+  expect(progressReads).toBe(0)
+  await page.getByRole("button", { name: "Try again", exact: true }).click()
+  await expect(page.locator('input[type="radio"]:checked')).toHaveCount(0)
+  await expect(page.getByRole("progressbar", { name: "Questions answered", exact: true })).toHaveAttribute("aria-valuenow", "0")
+  await expect(page.getByRole("button", { name: "Submit quiz", exact: true })).toBeDisabled()
+})
+
 async function confirmDeletion(page: Page, label: string) {
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()
@@ -53,6 +611,152 @@ async function expectPageToFitViewport(page: Page) {
 function pageModule(name: string) {
   return new RegExp(`/(src/pages/${name}\\.tsx|assets/${name}-[^/]+\\.js)(\\?.*)?$`)
 }
+
+test("course details retry enrollment, prevent duplicates and restore saved progress", async ({ page, data }, info) => {
+  // Saved progress may remain after an earlier enrollment was removed.
+  await prisma.lessonProgress.create({ data: { userId: data.student.id, lessonId: data.manualLessonId, completed: true, completedAt: new Date() } })
+  await login(page, data.student)
+  await page.goto(`/courses/${data.courseId}`)
+  await expect(page.getByText("Locked", { exact: true })).toHaveCount(2)
+  let attempts = 0
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route(`**/api/enrollments/courses/${data.courseId}`, async (route) => {
+    attempts++
+    if (attempts === 1) {
+      await route.fulfill({ status: 503, json: { message: "Enrollment unavailable" } })
+      return
+    }
+    started()
+    await delayed
+    await route.continue()
+  })
+  let progressReads = 0
+  await page.route(`**/api/progress/courses/${data.courseId}`, async (route) => {
+    if (++progressReads === 1) await route.fulfill({ status: 503, json: { message: "Progress unavailable" } })
+    else await route.continue()
+  })
+  try {
+    await page.getByRole("button", { name: "Enroll in course", exact: true }).click()
+    await expect(page.getByText("Enrollment unavailable", { exact: true })).toBeVisible()
+    expect(await prisma.enrollment.count({ where: { userId: data.student.id, courseId: data.courseId } })).toBe(0)
+    await page.getByRole("button", { name: "Enroll in course", exact: true }).click()
+    await requested
+    const pending = page.getByRole("button", { name: "Enrolling...", exact: true })
+    await expect(pending).toBeDisabled()
+    await pending.dispatchEvent("click")
+    expect(attempts).toBe(2)
+    release()
+    await expect(page.getByText("Progress could not be loaded.", { exact: false })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Open", exact: true })).toHaveCount(2)
+    await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toHaveCount(0)
+    await expect(page.getByText("0%", { exact: true })).toHaveCount(0)
+    await page.screenshot({ path: info.outputPath("course-details-progress-unknown.png"), fullPage: true, animations: "disabled" })
+    await page.getByRole("button", { name: "Retry", exact: true }).click()
+    await expect(page.getByText("1 of 2 lessons completed", { exact: true })).toBeVisible()
+    await expect(page.getByText("50%", { exact: true })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toHaveAttribute("href", `/lessons/${data.quizLessonId}`)
+    await expect(page.getByRole("link", { name: "Review", exact: true })).toHaveCount(1)
+    await expect(page.getByRole("link", { name: "Start", exact: true })).toHaveCount(1)
+    expect(await prisma.enrollment.count({ where: { userId: data.student.id, courseId: data.courseId } })).toBe(1)
+  } finally { release() }
+})
+
+test("leaving course details cancels every delayed metadata request", async ({ page, data }) => {
+  await login(page, data.admin, "/admin")
+  const held: Request[] = []
+  const finished: Promise<void>[] = []
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  await page.route(`**/api/courses/${data.courseId}`, async (route) => {
+    const request = route.request()
+    held.push(request)
+    let settled!: () => void
+    finished.push(new Promise<void>((resolve) => { settled = resolve }))
+    started()
+    await delayed
+    try {
+      await route.fulfill({ status: 500, json: { message: "Old course request failed" } })
+    } catch (error) { if (!request.failure()) throw error }
+    finally { settled() }
+  })
+  try {
+    await page.goto(`/courses/${data.courseId}`)
+    await requested
+    await page.getByRole("link", { name: "Explore courses", exact: true }).click()
+    const draft = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Draft Course", exact: true }) })
+    await draft.getByRole("link", { name: "Preview draft", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toBeVisible()
+    await expect.poll(() => held.length > 0 && held.every((request) => Boolean(request.failure()))).toBe(true)
+    release()
+    await Promise.all(finished)
+    await expect(page.getByText("Old course request failed", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Preview", exact: true })).toHaveCount(2)
+  } finally { release() }
+})
+
+test("a pending course enrollment is cancelled when history switches the course route", async ({ page, data }) => {
+  await login(page, data.admin, "/admin")
+  await page.goto(`/courses/${data.draftCourseId}`)
+  await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toBeVisible()
+  await page.getByRole("link", { name: "Back to courses", exact: true }).click()
+  const course = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Browser Programming Course", exact: true }) })
+  await course.getByRole("link", { name: "Details", exact: true }).click()
+  let pending: Request | undefined
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => { release = resolve })
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => { started = resolve })
+  let settled!: () => void
+  const finished = new Promise<void>((resolve) => { settled = resolve })
+  await page.route(`**/api/enrollments/courses/${data.courseId}`, async (route) => {
+    pending = route.request()
+    started()
+    await delayed
+    try { await route.fulfill({ status: 201, json: { message: "Enrolled successfully" } }) }
+    catch (error) { if (!pending.failure()) throw error }
+    finally { settled() }
+  })
+  try {
+    await page.getByRole("button", { name: "Enroll in course", exact: true }).click()
+    await requested
+    // Skip the intervening course list without replacing the browser document.
+    await page.evaluate(() => window.history.go(-2))
+    await expect(page).toHaveURL(`/courses/${data.draftCourseId}`)
+    await expect(page.getByRole("heading", { name: "Browser Draft Course", exact: true })).toBeVisible()
+    await expect.poll(() => Boolean(pending?.failure())).toBe(true)
+    release()
+    await finished
+    await expect(page.getByRole("status")).toContainText("Draft preview")
+    await expect(page.getByRole("button", { name: "Enroll in course", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Preview", exact: true })).toHaveCount(2)
+  } finally { release() }
+})
+
+test("completed course details preserve review actions after reload", async ({ page, data }, info) => {
+  await prisma.enrollment.create({ data: { userId: data.student.id, courseId: data.courseId } })
+  await prisma.lessonProgress.createMany({ data: [data.manualLessonId, data.quizLessonId].map((lessonId) => ({ userId: data.student.id, lessonId, completed: true, completedAt: new Date() })) })
+  await login(page, data.student)
+  await page.goto(`/courses/${data.courseId}`)
+  for (const reloaded of [false, true]) {
+    if (reloaded) await page.reload()
+    await expect(page.getByText("2 of 2 lessons completed", { exact: true })).toBeVisible()
+    await expect(page.getByText("100%", { exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Great work", exact: true })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Review course", exact: true })).toHaveAttribute("href", `/lessons/${data.manualLessonId}`)
+    await expect(page.getByRole("link", { name: "Review", exact: true })).toHaveCount(2)
+    await expect(page.getByRole("link", { name: "Continue learning", exact: true })).toHaveCount(0)
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expectPageToFitViewport(page)
+  await page.screenshot({ path: info.outputPath("course-details-completed-mobile.png"), fullPage: true, animations: "disabled" })
+})
 
 test("route modules load on demand and keep navigation visible during loading", async ({ page }) => {
   const modules: string[] = []

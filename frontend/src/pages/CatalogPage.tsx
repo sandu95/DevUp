@@ -12,6 +12,7 @@ import { StatusBadge } from "../components/ui/StatusBadge"
 
 function CatalogPage() {
   const [courses, setCourses] = useState<Course[]>([])
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
@@ -20,8 +21,9 @@ function CatalogPage() {
     const controller = new AbortController()
     const { signal } = controller
     const loadCourses = async () => {
+      setLoading(true)
+      setError("")
       try {
-        setError("")
         const data = await api<{ courses: Course[] }>("/courses", { signal })
         if (signal.aborted) return
         // Admin sessions also receive drafts from this endpoint; the public catalog shows published content.
@@ -35,7 +37,7 @@ function CatalogPage() {
     }
     void loadCourses()
     return () => controller.abort()
-  }, [])
+  }, [reload])
 
   const filteredCourses = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -62,7 +64,7 @@ function CatalogPage() {
             placeholder="Search by title or description..."
           />
         </div>
-        {loading ? <CourseGridSkeleton /> : error ? <ErrorMessage>{error}</ErrorMessage> : (
+        {loading ? <CourseGridSkeleton /> : error ? <ErrorMessage onRetry={() => setReload((value) => value + 1)}>{error}</ErrorMessage> : (
           <section className="space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4">
               <h2 className="text-lg font-semibold text-slate-900">Available courses</h2>

@@ -13,6 +13,7 @@ import { isCourseCompleted } from "../utils/progress"
 
 function DashboardPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -20,6 +21,8 @@ function DashboardPage() {
     const controller = new AbortController()
     const { signal } = controller
     const loadDashboard = async () => {
+      setLoading(true)
+      setError("")
       try {
         const data = await api<{ enrollments: Enrollment[] }>("/enrollments/me", { signal })
         if (signal.aborted) return
@@ -33,7 +36,7 @@ function DashboardPage() {
     }
     void loadDashboard()
     return () => controller.abort()
-  }, [])
+  }, [reload])
 
   const getProgress = (enrollment: Enrollment) => enrollment.progress?.percentage ?? 0
   const completedCourses = enrollments.filter((enrollment) => isCourseCompleted(enrollment.progress)).length
@@ -52,7 +55,7 @@ function DashboardPage() {
         title="Keep learning."
         description="Continue your courses, track your progress, and build your programming skills one lesson at a time."
       />
-      {loading ? <CourseGridSkeleton /> : error ? <ErrorMessage>{error}</ErrorMessage> : (
+      {loading ? <CourseGridSkeleton /> : error ? <ErrorMessage onRetry={() => setReload((value) => value + 1)}>{error}</ErrorMessage> : (
         <>
           {featuredCourse ? (
             <section aria-labelledby="featured-heading" className="space-y-4">

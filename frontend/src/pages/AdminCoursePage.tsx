@@ -1,3 +1,5 @@
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { api } from "../services/api"
@@ -6,7 +8,7 @@ import { useFormValidation, positionError } from "../hooks/useFormValidation"
 import { FieldError } from "../components/ui/FieldError"
 import type { Course } from "../types/course"
 import { LessonContent } from "../components/LessonContent"
-import { Button } from "../components/ui/Button"
+import { Button, ButtonLink } from "../components/ui/Button"
 import { PublicationChecklist } from "../components/PublicationChecklist"
 
 interface Lesson {
@@ -42,6 +44,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
 
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -85,7 +88,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
     void loadData(controller.signal)
     return () => controller.abort()
-  }, [courseId, loadData])
+  }, [courseId, loadData, reload])
 
   const resetForm = () => {
     validation.clear()
@@ -219,17 +222,13 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
   if (loading) {
     return (
-      <p className="text-sm text-slate-500">
-        Loading course...
-      </p>
+      <LoadingState label="Loading course..." />
     )
   }
 
   if (!course) {
     return (
-      <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {error || "Course not found"}
-      </div>
+      <ErrorMessage onRetry={() => { setLoading(true); setError(""); setReload((value) => value + 1) }}>{error || "Course not found"}</ErrorMessage>
     )
   }
 
@@ -245,7 +244,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
         </Link>
 
         <div className="mt-5">
-          <p className="text-sm font-medium text-violet-600">
+          <p className="text-sm font-medium text-indigo-600">
             Course management
           </p>
 
@@ -262,9 +261,7 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
       {course.status === "DRAFT" && <details className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-semibold text-slate-900">Publication readiness</summary><PublicationChecklist key={course.id} courseId={course.id} /></details>}
 
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
+        <ErrorMessage>{error}</ErrorMessage>
       )}
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
@@ -373,26 +370,26 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
               </div>
 
               <div className="mt-6 flex gap-3">
-                <button
+                <Button
                   type="submit"
                   disabled={saving || deleting}
-                  className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="flex-1"
                 >
                   {saving
                     ? "Saving..."
                     : editingId
                       ? "Save changes"
                       : "Create lesson"}
-                </button>
+                </Button>
 
                 {editingId && (
-                  <button disabled={saving || deleting}
+                  <Button disabled={saving || deleting}
                     type="button"
                     onClick={resetForm}
-                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    variant="secondary"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 )}
               </div>
             </fieldset>
@@ -436,29 +433,29 @@ function AdminCourseContent({ courseId }: { courseId: number }) {
 
                   <div className="col-span-2 flex flex-wrap gap-2">
                     {course.status === "DRAFT" && (
-                      <button disabled={saving || deleting}
+                      <Button disabled={saving || deleting}
                         onClick={() => handleEdit(lesson)}
-                        className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                        variant="secondary"
                       >
                         Edit
-                      </button>
+                      </Button>
                     )}
 
                     {course.status === "DRAFT" && (
-                      <button disabled={saving || deleting}
+                      <Button disabled={saving || deleting}
                         onClick={() => handleDelete(lesson.id)}
-                        className="rounded-xl border border-red-200 px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                        variant="danger-outline"
                       >
                         Delete
-                      </button>
+                      </Button>
                     )}
 
-                    <Link
+                    <ButtonLink
                       to={`/admin/lessons/${lesson.id}`}
-                      className="rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                      variant="secondary"
                     >
                       Manage
-                    </Link>
+                    </ButtonLink>
                   </div>
                 </div>
               ))}

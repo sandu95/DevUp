@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute"
 import AppLayout from "./layouts/AppLayout"
 import PublicLayout from "./layouts/PublicLayout"
 import HomePage from "./pages/HomePage"
+import NotFoundLayout from "./layouts/NotFoundLayout"
 
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const DashboardPage = lazy(() => import("./pages/DashboardPage"))
@@ -12,12 +13,14 @@ const CoursesPage = lazy(() => import("./pages/CoursesPage"))
 const CourseDetailsPage = lazy(() => import("./pages/CourseDetailsPage"))
 const LessonPage = lazy(() => import("./pages/LessonPage"))
 const QuizPage = lazy(() => import("./pages/QuizPage"))
+const QuizHistoryPage = lazy(() => import("./pages/QuizHistoryPage"))
 const AdminPage = lazy(() => import("./pages/AdminPage"))
 const AdminCoursePage = lazy(() => import("./pages/AdminCoursePage"))
 const AdminLessonPage = lazy(() => import("./pages/AdminLessonPage"))
 const AdminQuestionPage = lazy(() => import("./pages/AdminQuestionPage"))
 const CatalogPage = lazy(() => import("./pages/CatalogPage"))
 const PublicCoursePage = lazy(() => import("./pages/PublicCoursePage"))
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage"))
 
 function App() {
   return (
@@ -41,6 +44,7 @@ function App() {
           <Route path="/courses/:id" element={<CourseDetailsPage />} />
           <Route path="/lessons/:id" element={<LessonPage />} />
           <Route path="/quizzes/:id" element={<QuizPage />} />
+          <Route path="/quiz-history" element={<QuizHistoryPage />} />
 
           <Route element={<ProtectedRoute allowedRole="ADMIN" />}>
             <Route path="/admin" element={<AdminPage />} />
@@ -58,6 +62,9 @@ function App() {
             />
           </Route>
         </Route>
+      </Route>
+      <Route element={<NotFoundLayout />}>
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   )

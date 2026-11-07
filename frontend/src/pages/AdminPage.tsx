@@ -1,10 +1,12 @@
+import { Button, ButtonLink } from "../components/ui/Button"
+import { ErrorMessage } from "../components/ui/ErrorMessage"
+import { LoadingState } from "../components/ui/LoadingState"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { api } from "../services/api"
 import { useConfirmation } from "../hooks/useConfirmation"
 import { useFormValidation } from "../hooks/useFormValidation"
 import { FieldError } from "../components/ui/FieldError"
 import type { Course } from "../types/course"
-import { Link } from "react-router-dom"
 import { PublicationChecklist } from "../components/PublicationChecklist"
 
 interface CourseForm {
@@ -22,10 +24,12 @@ const emptyForm: CourseForm = {
 }
 
 function AdminPage() {
+    const [loaded, setLoaded] = useState(false)
     const [courses, setCourses] = useState<Course[]>([])
     const [form, setForm] = useState<CourseForm>(emptyForm)
     const [editingId, setEditingId] = useState<number | null>(null)
 
+    const [reload, setReload] = useState(0)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [deleting, setDeleting] = useState(false)
@@ -41,6 +45,7 @@ function AdminPage() {
             if (signal.aborted) return
             setError("")
             setCourses(data.courses)
+            setLoaded(true)
         }).catch((error: unknown) => {
             if (signal.aborted) return
             setError(
@@ -58,7 +63,7 @@ function AdminPage() {
         routeRequest.current = controller
         void loadCourses(controller.signal)
         return () => controller.abort()
-    }, [loadCourses])
+    }, [loadCourses, reload])
 
     const handleChange = (
         event:
@@ -197,17 +202,19 @@ function AdminPage() {
 
     if (loading) {
         return (
-            <p className="text-sm text-slate-500">
-                Loading admin panel...
-            </p>
+            <LoadingState label="Loading admin panel..." />
         )
+    }
+
+    if (!loaded && error) {
+        return <ErrorMessage onRetry={() => { setLoading(true); setError(""); setReload((value) => value + 1) }}>{error}</ErrorMessage>
     }
 
     return (
         <div className="space-y-8">
             {confirmation.dialog}
             <div>
-                <p className="text-sm font-medium text-violet-600">
+                <p className="text-sm font-medium text-indigo-600">
                     Administration
                 </p>
 
@@ -221,9 +228,7 @@ function AdminPage() {
             </div>
 
             {error && (
-                <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                </div>
+                <ErrorMessage>{error}</ErrorMessage>
             )}
 
             <section className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
@@ -319,26 +324,26 @@ function AdminPage() {
 
                         {editingId && form.status === "PUBLISHED" && <PublicationChecklist key={editingId} courseId={editingId} />}
                         <div className="mt-6 flex gap-3">
-                            <button
+                            <Button
                                 type="submit"
                                 disabled={saving || deleting}
-                                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                                className="flex-1"
                             >
                                 {saving
                                     ? "Saving..."
                                     : editingId
                                         ? "Save changes"
                                         : "Create course"}
-                            </button>
+                            </Button>
 
                             {editingId && (
-                                <button disabled={saving || deleting}
+                                <Button disabled={saving || deleting}
                                     type="button"
                                     onClick={resetForm}
-                                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                    variant="secondary"
                                 >
                                     Cancel
-                                </button>
+                                </Button>
                             )}
                         </div>
                     </fieldset>
@@ -409,27 +414,27 @@ function AdminPage() {
 
                                         <div className="flex w-full flex-wrap gap-2">
                                         {course.status === "DRAFT" && (
-                                            <button disabled={saving || deleting}
+                                            <Button disabled={saving || deleting}
                                                 onClick={() => handleEdit(course)}
-                                                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                                                variant="secondary"
                                             >
                                                 Edit
-                                            </button>
+                                            </Button>
                                         )}
 
-                                        <button disabled={saving || deleting}
+                                        <Button disabled={saving || deleting}
                                             onClick={() => handleDelete(course)}
-                                            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                                            variant="danger-outline"
                                         >
                                             Delete
-                                        </button>
+                                        </Button>
 
-                                        <Link
+                                        <ButtonLink
                                             to={`/admin/courses/${course.id}`}
-                                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                            variant="secondary"
                                         >
                                             Manage
-                                        </Link>
+                                        </ButtonLink>
                                         </div>
                                     </div>
                                 ))}

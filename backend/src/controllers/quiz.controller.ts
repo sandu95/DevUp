@@ -418,13 +418,12 @@ export const getMyAttempts = async (
       })
     }
 
-    const quizId = req.query.quizId
-      ? Number(req.query.quizId)
-      : undefined
+    const filter = req.query.quizId
+    const quizId = filter === undefined ? undefined : Number(filter)
 
     if (
       quizId !== undefined &&
-      (!isPositiveInt(quizId))
+      (typeof filter !== "string" || !isPositiveInt(quizId))
     ) {
       return res.status(400).json({
         message: "Invalid quiz id",

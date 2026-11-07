@@ -1,6 +1,7 @@
 import { Link, NavLink } from "react-router-dom"
 import { RouteContent } from "../components/RouteContent"
 import { useAuth } from "../context/useAuth"
+import { ButtonLink } from "../components/ui/Button"
 
 function PublicLayout() {
   const { isAuthenticated } = useAuth()
@@ -20,7 +21,7 @@ function PublicLayout() {
   return (
     <div className="min-h-screen bg-[#f7f7f5] text-slate-900">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-[#f7f7f5]/95 backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[72px] max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-3 lg:px-8">
 
           {/* Logo */}
           <Link
@@ -37,7 +38,7 @@ function PublicLayout() {
           </Link>
 
           {/* Navigation */}
-          <nav className="flex items-center gap-6 sm:gap-8">
+          <nav className="flex flex-wrap items-center gap-3 sm:gap-8">
             <NavLink
               to="/"
               end
@@ -54,19 +55,17 @@ function PublicLayout() {
             </NavLink>
 
             {isAuthenticated ? (
-              <Link
+              <ButtonLink
                 to="/dashboard"
-                className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
                 Dashboard
-              </Link>
+              </ButtonLink>
             ) : (
-              <Link
+              <ButtonLink
                 to="/login"
-                className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
                 Log in
-              </Link>
+              </ButtonLink>
             )}
           </nav>
         </div>

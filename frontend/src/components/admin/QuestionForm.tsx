@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button"
 import type { FormEventHandler } from "react"
 import type { useFormValidation } from "../../hooks/useFormValidation"
 import { FieldError } from "../ui/FieldError"
@@ -79,26 +80,26 @@ export function QuestionForm({ text, position, editing, saving, busy, validation
         </div>
 
         <div className="mt-5 flex gap-3">
-          <button
+          <Button
             type="submit"
             disabled={busy}
-            className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="flex-1"
           >
             {saving
               ? "Saving..."
               : editing
                 ? "Save changes"
                 : "Add question"}
-          </button>
+          </Button>
 
           {editing && (
-            <button disabled={busy}
+            <Button disabled={busy}
               type="button"
               onClick={onCancel}
-              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              variant="secondary"
             >
               Cancel
-            </button>
+            </Button>
           )}
         </div>
       </fieldset>

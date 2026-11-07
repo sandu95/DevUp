@@ -1,3 +1,5 @@
+import { Button } from "../components/ui/Button"
+import { ErrorMessage } from "../components/ui/ErrorMessage"
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import type { LoginResponse } from "../types/auth"
@@ -198,18 +200,16 @@ function LoginPage() {
                 </div>
 
                 {error && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                  </div>
+                  <ErrorMessage>{error}</ErrorMessage>
                 )}
 
-                <button
+                <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full"
                 >
                   {loading ? "Signing in..." : "Sign in"}
-                </button>
+                </Button>
               </form>
 
               <p className="mt-6 text-center text-xs leading-5 text-slate-400">
