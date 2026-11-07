@@ -27,7 +27,7 @@ administration of courses, lessons and quizzes.
 -   Node.js
 -   Express `5.2.1`
 -   TypeScript `7.0.2`
--   Prisma `7.10.0`
+-   Prisma `7.10.1`
 -   PostgreSQL
 -   `@prisma/adapter-pg`
 -   `pg`
@@ -556,16 +556,16 @@ git push
 ### Current verification state
 
 ``` text
-Automated tests: 112/112 passed (14 suites, 2026-11-05)
+Automated tests: 112/112 passed (14 suites, 2026-11-06)
 Backend build: passed
 Frontend build: passed, initial JavaScript 282.49 kB / 87.81 kB gzip, no chunk-size warning
-Frontend ESLint: passed (0 errors, 0 warnings)
+Frontend ESLint: passed (0 errors, 0 warnings); 3 tooling compatibility tests passed
 Browser interaction: 34/34 passed in Chromium production preview and Edge development/Strict Mode (headless)
 Viewports: desktop and mobile 390x844
 Frontend E2E TypeScript: passed
 Original lesson/quiz stabilization plan (steps 1-6): completed
 Prisma client generation and test migration deployment: passed
-CI baseline c13bb4e: passed, including 31 Chromium tests; subsequent performance batch verified locally
+CI baseline 3eb87a2: passed, including 34 production Chromium tests; security follow-up verified locally
 ```
 
 The follow-up work adds published-only learning access, admin draft preview, validation before publication, consistent payload/ID checks and conflict responses, exact lesson-count completion, cancellation of requests on navigation, accessible search/navigation controls, and wrapping admin rows on mobile. Publication failures keep the course and accompanying metadata unchanged. Quizless lessons are publishable; existing quizzes require questions, nonblank options and exactly one correct answer per question.
@@ -580,7 +580,9 @@ The lesson-reading batch (2026-11-05) adds a shared react-markdown renderer to l
 
 The admin-authoring batch (2026-11-05) reuses publication validation in a protected read-only readiness endpoint and the publication transaction. Checklists link to editors and support retry/cancellation. Forms expose inline errors and write guards. A shared modal replaces delete confirmations, with keyboard cancellation, focus restoration and cascade descriptions. Responsive action rows keep titles readable. Four HTTP scenarios plus strengthened rule checks bring backend coverage to 112 tests; three browser scenarios bring the suite to 31 per engine. See [the admin guide](ADMIN_AUTHORING.md). The frontend build succeeds with a >500 kB main-chunk warning; route-based loading is a follow-up.
 
-The performance/refactoring/dependency batch (2026-11-05) loads page modules on demand and handles loading/download failure inside the existing layouts. The initial entry drops from 501.51 to 282.49 kB minified, with no raised chunk threshold. AdminLessonPage separates its authoring hook and controlled forms. Three new browser scenarios bring the suite to 34 per browser; Chromium uses production preview and Edge retains development/Strict Mode coverage. The CI browser step now uses preview mode and awaits a new remote run. Compatible dependency updates reduce frontend findings from 13 to 10 moderate and backend findings from 8 to 4 high; audits are not clean. Both builds, lint, E2E TypeScript, 112 backend tests, 34 scenarios per browser and npm ci dry runs passed. See [the detailed review](PERFORMANCE_AND_DEPENDENCIES.md).
+The performance/refactoring/dependency batch (2026-11-05) loads page modules on demand and handles loading/download failure inside the existing layouts. The initial entry drops from 501.51 to 282.49 kB minified, with no raised chunk threshold. AdminLessonPage separates its authoring hook and controlled forms. Three new browser scenarios bring the suite to 34 per browser; Chromium uses production preview and Edge retains development/Strict Mode coverage. The CI browser step uses preview mode; this performance batch passed remote run 42131841831 with all 34 Chromium scenarios. Compatible dependency updates reduce frontend findings from 13 to 10 moderate and backend findings from 8 to 4 high; audits were not clean at that stage, before the remediation below. Both builds, lint, E2E TypeScript, 112 backend tests, 34 scenarios per browser and npm ci dry runs passed. See [the detailed review](PERFORMANCE_AND_DEPENDENCIES.md).
+
+The dependency remediation (2026-11-06) pins the Prisma family at stable patch 7.10.1, adopting upstream deepmerge-ts 8.0.2 and mysql2 3.24.4 without backend overrides. Scoped minimatch 11.0.5 overrides repair the three ESLint/typescript-eslint consumers. Full and omit-dev audits now report 0 findings in both packages; neither root tooling downgrades nor ignored advisories are used. The same 49 files and diagnostics were observed before/after minimatch replacement, and three permanent tooling tests verify discovery, ignores and parser/rule execution. Clean npm ci installations, client generation, isolated test migration deployment, 112 backend tests and both builds passed. CI includes tooling tests and full audits; this security follow-up is not pushed yet. See [the remediation details](PERFORMANCE_AND_DEPENDENCIES.md).
 
 ## 17. Future development / remaining work
 
@@ -588,8 +590,8 @@ This section should be updated as the project evolves.
 
 Remaining follow-up:
 
--   resolve the remaining Prisma/deepmerge-ts/mysql2 findings with a reviewed Prisma-family upgrade; findings also appear with omit dev;
--   review upstream ESLint/typescript-eslint support for patched minimatch, without automatic downgrades or major overrides;
+-   keep Prisma CLI/client/adapter versions aligned when upgrading;
+-   remove scoped minimatch overrides once upstream ESLint/typescript-eslint consumers adopt patched versions directly, after rerunning tooling tests and lint;
 -   refactor CourseDetailsPage and QuizPage one workflow at a time, preserving cancellation and completion behavior;
 
 -   monitor GitHub Actions results after changes;

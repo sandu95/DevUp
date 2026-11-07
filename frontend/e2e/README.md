@@ -6,7 +6,7 @@ Install both packages' dependencies, then run `npm run db:generate` and `npm run
 
 The suite starts its own API at `http://localhost:3001` and Vite at `http://localhost:5180`. It refuses to reuse an existing server. The regular app defaults remain API port 3000 and frontend origin 5173. Optional app settings are `PORT`, `CORS_ORIGIN`, and frontend `VITE_API_URL` (including `/api`).
 
-Run `npm run typecheck:e2e` to type-check the tests. Run `npm run test:e2e -- --headed` to watch the browser, or `npm run test:e2e -- --grep "quiz"` to select scenarios.
+Run `npm run test:tooling` for the lint-glob/ignore/rule compatibility checks protecting the scoped minimatch override. Run `npm run typecheck:e2e` to type-check the browser tests. Run `npm run test:e2e -- --headed` to watch the browser, or `npm run test:e2e -- --grep "quiz"` to select scenarios.
 
 Set `PLAYWRIGHT_PREVIEW=true` to build and test production assets with Vite preview. The config sets the isolated test API URL during that build. For example, in PowerShell: `$env:PLAYWRIGHT_PREVIEW = 'true'; npm run test:e2e`. Remove that environment variable to return to the default development server. CI selects preview mode with Chromium; local verification also covers Edge with the development server and Strict Mode.
 

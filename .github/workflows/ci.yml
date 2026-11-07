@@ -44,6 +44,10 @@ jobs:
         run: |
           npm ci --prefix backend
           npm ci --prefix frontend
+      - name: Dependency audits
+        run: |
+          npm audit --audit-level=low --prefix backend
+          npm audit --audit-level=low --prefix frontend
       - name: Write test configuration
         run: >-
           node --input-type=module -e "import {writeFileSync} from 'node:fs';
@@ -58,6 +62,7 @@ jobs:
           npm run build --prefix backend
       - name: Frontend checks
         run: |
+          npm run test:tooling --prefix frontend
           npm run lint --prefix frontend
           npm run typecheck:e2e --prefix frontend
           npm run build --prefix frontend

@@ -57,13 +57,13 @@ Accounts are not seeded automatically. `POST /api/auth/register` creates a stude
 
 From `backend`: `npm test` and `npm run build`.
 
-From `frontend`: `npm run lint`, `npm run typecheck:e2e`, `npm run build`, and `npm run test:e2e`.
+From `frontend`: `npm run test:tooling`, `npm run lint`, `npm run typecheck:e2e`, `npm run build`, and `npm run test:e2e`. Run `npm audit` from each package to check the complete dependency tree.
 
 Browser tests start isolated servers on ports 3001/5180 against `.env.test`, create their own accounts/content and remove them afterwards. They refuse to reuse existing servers. See [browser test instructions](frontend/e2e/README.md).
 
 For Chromium instead of Edge, install it from `frontend` with `npx playwright install chromium`, set `PLAYWRIGHT_BROWSER_CHANNEL=chromium`, then run the browser tests. For example, in PowerShell: `$env:PLAYWRIGHT_BROWSER_CHANNEL = 'chromium'`.
 
-The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pushes and pull requests to `main`. It provisions an ephemeral PostgreSQL database, generates Prisma, applies migrations, runs backend/frontend checks and runs the browser suite in Chromium. Reports and traces are uploaded as CI artifacts. Check the repository's Actions tab for the latest result.
+The workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pushes and pull requests to `main`. It provisions an ephemeral PostgreSQL database, generates Prisma, applies migrations, runs full dependency audits, backend/frontend checks, lint-tooling compatibility tests and the browser suite in Chromium. Reports and traces are uploaded as CI artifacts. Check the repository's Actions tab for the latest result.
 
 ## Project references
 
